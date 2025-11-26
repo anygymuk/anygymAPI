@@ -25,7 +25,7 @@ export class StripeService {
   ) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
-      this.stripe = new Stripe(stripeKey, { apiVersion: '2024-11-20.acacia' });
+      this.stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
     } else {
       this.logger.warn('STRIPE_SECRET_KEY not set in environment variables');
     }
@@ -111,8 +111,10 @@ export class StripeService {
         throw new Error('Customer has been deleted');
       }
 
-      const auth0Id = customer.metadata?.auth0_id;
-      const postcode = customer.metadata?.postcode || session.metadata?.postcode;
+      // Type guard: customer is not deleted, so it's a Customer object
+      const activeCustomer = customer as Stripe.Customer;
+      const auth0Id = activeCustomer.metadata?.auth0_id;
+      const postcode = activeCustomer.metadata?.postcode || session.metadata?.postcode;
 
       if (!auth0Id) {
         throw new Error('auth0_id not found in customer metadata');

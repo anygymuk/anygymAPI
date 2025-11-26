@@ -19,7 +19,7 @@ export class StripeController {
   constructor(private readonly stripeService: StripeService) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
-      this.stripe = new Stripe(stripeKey, { apiVersion: '2024-11-20.acacia' });
+      this.stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
     }
   }
 
