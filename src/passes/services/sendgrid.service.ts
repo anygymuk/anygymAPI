@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as sgMail from '@sendgrid/mail';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const sgMail = require('@sendgrid/mail');
 
 @Injectable()
 export class SendGridService {
@@ -8,9 +9,7 @@ export class SendGridService {
   constructor() {
     const apiKey = process.env.SENDGRID_API_KEY;
     if (apiKey) {
-      // @sendgrid/mail is a CommonJS module, so we need to access the default export
-      const mail = sgMail.default || sgMail;
-      mail.setApiKey(apiKey);
+      sgMail.setApiKey(apiKey);
     } else {
       this.logger.warn('SENDGRID_API_KEY not set in environment variables');
     }
@@ -46,9 +45,7 @@ export class SendGridService {
         },
       };
 
-      // @sendgrid/mail is a CommonJS module, so we need to access the default export
-      const mail = sgMail.default || sgMail;
-      await mail.send(msg);
+      await sgMail.send(msg);
       this.logger.log(`Pass email sent successfully to ${data.to}`);
     } catch (error) {
       this.logger.error(`Error sending email: ${error.message}`, error.stack);
