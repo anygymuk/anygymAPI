@@ -4,10 +4,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GymsModule } from './gyms/gyms.module';
 import { UsersModule } from './users/users.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { PassesModule } from './passes/passes.module';
 import { Gym } from './gyms/entities/gym.entity';
 import { GymChain } from './gyms/entities/gym-chain.entity';
 import { User } from './users/entities/user.entity';
 import { Subscription } from './subscriptions/entities/subscription.entity';
+import { GymPass } from './passes/entities/gym-pass.entity';
 
 @Module({
   imports: [
@@ -27,7 +29,7 @@ import { Subscription } from './subscriptions/entities/subscription.entity';
         return {
           type: 'postgres',
           url: databaseUrl,
-          entities: [Gym, GymChain, User, Subscription],
+          entities: [Gym, GymChain, User, Subscription, GymPass],
           synchronize: false,
           ssl: {
             rejectUnauthorized: false,
@@ -44,6 +46,7 @@ import { Subscription } from './subscriptions/entities/subscription.entity';
     GymsModule,
     UsersModule,
     SubscriptionsModule,
+    PassesModule,
   ],
 })
 export class AppModule {}
