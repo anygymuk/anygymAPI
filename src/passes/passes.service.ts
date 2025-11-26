@@ -118,7 +118,7 @@ export class PassesService {
           updated_at: formatDate(pass.updatedAt) || '',
           subscription_tier: pass.subscriptionTier || null,
         };
-        return this.removeEmptyValues(response);
+        return this.removeEmptyValues(response) as PassResponseDto;
       });
     } catch (error) {
       this.logger.error(
