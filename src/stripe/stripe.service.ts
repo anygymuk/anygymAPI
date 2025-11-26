@@ -233,7 +233,7 @@ export class StripeService {
         postcode: gym.postcode,
         city: gym.city,
         url: `${process.env.FRONTEND_URL || 'https://any-gym.com'}/gyms/${gym.id}`,
-        image: gym.imageUrl || '',
+        image: gym.gymChain?.logo || '',
       }));
 
       // Step 11: Send welcome email
