@@ -1,11 +1,8 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn } from 'typeorm';
 
 @Entity('app_users')
 export class User {
-  @PrimaryGeneratedColumn()
-  id: number;
-
-  @Column({ name: 'auth0_id', unique: true })
+  @PrimaryColumn({ name: 'auth0_id' })
   auth0Id: string;
 
   @Column()
