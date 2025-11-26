@@ -9,6 +9,34 @@ import { GymDetailResponseDto } from './dto/gym-detail-response.dto';
 export class GymsService {
   private readonly logger = new Logger(GymsService.name);
 
+  /**
+   * Removes null, undefined, and empty string values from an object
+   */
+  private removeEmptyValues<T>(obj: T): Partial<T> {
+    const result: any = {};
+    for (const key in obj) {
+      const value = obj[key];
+      // Keep the value if it's not null, undefined, or empty string
+      // Also keep arrays (even if empty) and objects
+      if (value !== null && value !== undefined && value !== '') {
+        if (Array.isArray(value)) {
+          // Keep arrays even if empty
+          result[key] = value;
+        } else if (typeof value === 'object') {
+          // Recursively clean nested objects
+          const cleaned = this.removeEmptyValues(value);
+          // Only include if the cleaned object has properties
+          if (Object.keys(cleaned).length > 0) {
+            result[key] = cleaned;
+          }
+        } else {
+          result[key] = value;
+        }
+      }
+    }
+    return result;
+  }
+
   constructor(
     @InjectRepository(Gym)
     private gymRepository: Repository<Gym>,
@@ -57,23 +85,26 @@ export class GymsService {
       this.logger.log(`Found ${gyms.length} active gyms`);
 
       // Transform the data to match the required format
-      return gyms.map((gym) => ({
-        id: gym.id,
-        name: gym.name,
-        gym_chain_id: gym.gymChainId,
-        gym_chain_name: gym.gymChain?.name || null,
-        gym_chain_logo: gym.gymChain?.logo || null,
-        address: gym.address,
-        postcode: gym.postcode,
-        city: gym.city,
-        latitude: gym.latitude ? parseFloat(gym.latitude.toString()) : null,
-        longitude: gym.longitude ? parseFloat(gym.longitude.toString()) : null,
-        required_tier: gym.requiredTier,
-        amenities: gym.amenities || [],
-        opening_hours: gym.openingHours || null,
-        phone: gym.phone || null,
-        image_url: gym.imageUrl || null,
-      }));
+      return gyms.map((gym) => {
+        const response = {
+          id: gym.id,
+          name: gym.name,
+          gym_chain_id: gym.gymChainId,
+          gym_chain_name: gym.gymChain?.name || null,
+          gym_chain_logo: gym.gymChain?.logo || null,
+          address: gym.address,
+          postcode: gym.postcode,
+          city: gym.city,
+          latitude: gym.latitude ? parseFloat(gym.latitude.toString()) : null,
+          longitude: gym.longitude ? parseFloat(gym.longitude.toString()) : null,
+          required_tier: gym.requiredTier,
+          amenities: gym.amenities || [],
+          opening_hours: gym.openingHours || null,
+          phone: gym.phone || null,
+          image_url: gym.imageUrl || null,
+        };
+        return this.removeEmptyValues(response);
+      });
     } catch (error) {
       this.logger.error('Error fetching gyms:', error);
       throw error;
@@ -133,9 +164,12 @@ export class GymsService {
         } else {
           gymChain.health_statement_url = gym.gymChain.healthStatementUrl || null;
         }
+
+        // Remove empty values from gym_chain
+        gymChain = this.removeEmptyValues(gymChain) as GymDetailResponseDto['gym_chain'];
       }
 
-      return {
+      const response = {
         id: gym.id,
         name: gym.name,
         address: gym.address,
@@ -154,6 +188,8 @@ export class GymsService {
         status: gym.status,
         gym_chain: gymChain,
       };
+
+      return this.removeEmptyValues(response) as GymDetailResponseDto;
     } catch (error) {
       this.logger.error(`Error in findOne: ${error.message}`, error.stack);
       if (error instanceof NotFoundException) {

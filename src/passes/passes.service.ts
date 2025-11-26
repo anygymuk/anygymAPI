@@ -27,6 +27,29 @@ export class PassesService {
     private sendGridService: SendGridService,
   ) {}
 
+  /**
+   * Removes null, undefined, and empty string values from an object
+   */
+  private removeEmptyValues<T>(obj: T): Partial<T> {
+    const result: any = {};
+    for (const key in obj) {
+      const value = obj[key];
+      if (value !== null && value !== undefined && value !== '') {
+        if (Array.isArray(value)) {
+          result[key] = value;
+        } else if (typeof value === 'object') {
+          const cleaned = this.removeEmptyValues(value);
+          if (Object.keys(cleaned).length > 0) {
+            result[key] = cleaned;
+          }
+        } else {
+          result[key] = value;
+        }
+      }
+    }
+    return result;
+  }
+
   async findByAuth0Id(auth0Id: string, filters?: GetPassesDto): Promise<PassResponseDto[]> {
     try {
       this.logger.log(`Looking up passes for auth0_id: ${auth0Id}${filters?.status ? ` with status: ${filters.status}` : ''}`);
@@ -78,22 +101,25 @@ export class PassesService {
         return null;
       };
 
-      return passes.map((pass) => ({
-        id: pass.id,
-        user_id: pass.userId,
-        gym_id: pass.gymId,
-        gym_chain_id: pass.gym?.gymChainId || null,
-        gym_chain_name: pass.gym?.gymChain?.name || null,
-        gym_chain_logo: pass.gym?.gymChain?.logo || null,
-        pass_code: pass.passCode,
-        status: pass.status,
-        valid_until: formatDate(pass.validUntil),
-        used_at: formatDate(pass.usedAt),
-        qrcode_url: pass.qrcodeUrl || null,
-        created_at: formatDate(pass.createdAt) || '',
-        updated_at: formatDate(pass.updatedAt) || '',
-        subscription_tier: pass.subscriptionTier || null,
-      }));
+      return passes.map((pass) => {
+        const response = {
+          id: pass.id,
+          user_id: pass.userId,
+          gym_id: pass.gymId,
+          gym_chain_id: pass.gym?.gymChainId || null,
+          gym_chain_name: pass.gym?.gymChain?.name || null,
+          gym_chain_logo: pass.gym?.gymChain?.logo || null,
+          pass_code: pass.passCode,
+          status: pass.status,
+          valid_until: formatDate(pass.validUntil),
+          used_at: formatDate(pass.usedAt),
+          qrcode_url: pass.qrcodeUrl || null,
+          created_at: formatDate(pass.createdAt) || '',
+          updated_at: formatDate(pass.updatedAt) || '',
+          subscription_tier: pass.subscriptionTier || null,
+        };
+        return this.removeEmptyValues(response);
+      });
     } catch (error) {
       this.logger.error(
         `Error in findByAuth0Id: ${error.message}`,

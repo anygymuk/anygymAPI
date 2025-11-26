@@ -13,6 +13,29 @@ export class UsersService {
     private userRepository: Repository<User>,
   ) {}
 
+  /**
+   * Removes null, undefined, and empty string values from an object
+   */
+  private removeEmptyValues<T>(obj: T): Partial<T> {
+    const result: any = {};
+    for (const key in obj) {
+      const value = obj[key];
+      if (value !== null && value !== undefined && value !== '') {
+        if (Array.isArray(value)) {
+          result[key] = value;
+        } else if (typeof value === 'object') {
+          const cleaned = this.removeEmptyValues(value);
+          if (Object.keys(cleaned).length > 0) {
+            result[key] = cleaned;
+          }
+        } else {
+          result[key] = value;
+        }
+      }
+    }
+    return result;
+  }
+
   async findOneByAuth0Id(auth0Id: string): Promise<UserResponseDto> {
     try {
       this.logger.log(`Looking up user with auth0_id: ${auth0Id}`);
@@ -59,7 +82,7 @@ export class UsersService {
         }
       }
 
-      return {
+      const response = {
         auth0_id: user.auth0Id || '',
         email: user.email || '',
         full_name: user.fullName || null,
@@ -73,6 +96,7 @@ export class UsersService {
         emergency_contact_name: user.emergencyContactName || null,
         emergency_contact_number: user.emergencyContactNumber || null,
       };
+      return this.removeEmptyValues(response) as UserResponseDto;
     } catch (error) {
       this.logger.error(`Error in findOneByAuth0Id: ${error.message}`, error.stack);
       // Re-throw NotFoundException as-is

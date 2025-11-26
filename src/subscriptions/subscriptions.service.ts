@@ -14,6 +14,29 @@ export class SubscriptionsService {
     private subscriptionRepository: Repository<Subscription>,
   ) {}
 
+  /**
+   * Removes null, undefined, and empty string values from an object
+   */
+  private removeEmptyValues<T>(obj: T): Partial<T> {
+    const result: any = {};
+    for (const key in obj) {
+      const value = obj[key];
+      if (value !== null && value !== undefined && value !== '') {
+        if (Array.isArray(value)) {
+          result[key] = value;
+        } else if (typeof value === 'object') {
+          const cleaned = this.removeEmptyValues(value);
+          if (Object.keys(cleaned).length > 0) {
+            result[key] = cleaned;
+          }
+        } else {
+          result[key] = value;
+        }
+      }
+    }
+    return result;
+  }
+
   async findByAuth0Id(auth0Id: string, filters?: GetSubscriptionDto): Promise<SubscriptionResponseDto> {
     try {
       this.logger.log(`Looking up subscription for auth0_id: ${auth0Id}${filters?.status ? ` with status: ${filters.status}` : ''}`);
@@ -68,7 +91,7 @@ export class SubscriptionsService {
         return null;
       };
 
-      return {
+      const response = {
         id: subscription.id,
         user_id: subscription.userId,
         tier: subscription.tier,
@@ -83,6 +106,7 @@ export class SubscriptionsService {
         guest_passes_limit: subscription.guestPassesLimit,
         guest_passes_used: subscription.guestPassesUsed,
       };
+      return this.removeEmptyValues(response) as SubscriptionResponseDto;
     } catch (error) {
       this.logger.error(
         `Error in findByAuth0Id: ${error.message}`,
