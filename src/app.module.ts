@@ -10,6 +10,7 @@ import { GymChain } from './gyms/entities/gym-chain.entity';
 import { User } from './users/entities/user.entity';
 import { Subscription } from './subscriptions/entities/subscription.entity';
 import { GymPass } from './passes/entities/gym-pass.entity';
+import { PassPricing } from './passes/entities/pass-pricing.entity';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { GymPass } from './passes/entities/gym-pass.entity';
         return {
           type: 'postgres',
           url: databaseUrl,
-          entities: [Gym, GymChain, User, Subscription, GymPass],
+          entities: [Gym, GymChain, User, Subscription, GymPass, PassPricing],
           synchronize: false,
           ssl: {
             rejectUnauthorized: false,

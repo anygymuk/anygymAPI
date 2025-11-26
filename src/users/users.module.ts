@@ -9,6 +9,7 @@ import { Auth0Guard } from './guards/auth0.guard';
   imports: [TypeOrmModule.forFeature([User])],
   controllers: [UsersController],
   providers: [UsersService, Auth0Guard],
+  exports: [UsersService],
 })
 export class UsersModule {}
 

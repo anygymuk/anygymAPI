@@ -1,7 +1,9 @@
 import {
   Controller,
   Get,
+  Post,
   Headers,
+  Body,
   Query,
   UseGuards,
   Logger,
@@ -10,15 +12,16 @@ import { PassesService } from './passes.service';
 import { Auth0Guard } from '../users/guards/auth0.guard';
 import { PassResponseDto } from './dto/pass-response.dto';
 import { GetPassesDto } from './dto/get-passes.dto';
+import { GeneratePassDto } from './dto/generate-pass.dto';
 
-@Controller('user/passes')
+@Controller()
 @UseGuards(Auth0Guard)
 export class PassesController {
   private readonly logger = new Logger(PassesController.name);
 
   constructor(private readonly passesService: PassesService) {}
 
-  @Get()
+  @Get('user/passes')
   async getPasses(
     @Headers('auth0_id') auth0Id: string,
     @Query() query: GetPassesDto,
@@ -44,6 +47,23 @@ export class PassesController {
       return passes;
     } catch (error) {
       this.logger.error(`Error in getPasses: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Post('generate_pass')
+  async generatePass(
+    @Headers('auth0_id') auth0Id: string,
+    @Body() generatePassDto: GeneratePassDto,
+  ): Promise<{ message: string; pass_id: number }> {
+    try {
+      this.logger.log(`POST /generate_pass called with auth0_id: ${auth0Id}, gym_id: ${generatePassDto.gym_id}`);
+
+      // The Auth0Guard ensures auth0_id is present in headers
+      // Generate pass using the auth0_id from the header
+      return await this.passesService.generatePass(auth0Id, generatePassDto);
+    } catch (error) {
+      this.logger.error(`Error in generatePass: ${error.message}`, error.stack);
       throw error;
     }
   }

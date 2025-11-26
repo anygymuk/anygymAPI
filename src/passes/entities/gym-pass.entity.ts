@@ -44,5 +44,8 @@ export class GymPass {
 
   @Column({ name: 'subscription_tier', nullable: true })
   subscriptionTier: string;
+
+  @Column({ name: 'pass_cost', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  passCost: number;
 }
 
