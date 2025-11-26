@@ -94,7 +94,7 @@ GET /gyms?required_tier=premium&amenities=pool&gym_chain_id=1
 1. Connect your GitHub repository to Render
 2. Create a new Web Service
 3. Set the following:
-   - **Build Command**: `npm install && npm run build`
+   - **Build Command**: `NODE_OPTIONS=--max-old-space-size=8192 npm install && npm run build`
    - **Start Command**: `npm run start:prod`
    - **Environment Variables**:
      - `DATABASE_URL`: Your Neon PostgreSQL connection string
