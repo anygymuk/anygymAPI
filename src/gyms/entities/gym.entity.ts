@@ -46,6 +46,15 @@ export class Gym {
   @Column({ name: 'image_url', nullable: true })
   imageUrl: string;
 
+  @Column({ type: 'decimal', precision: 3, scale: 2, nullable: true })
+  rating: number;
+
+  @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  createdAt: Date;
+
+  @Column({ name: 'updated_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
+  updatedAt: Date;
+
   @Column({ default: 'active' })
   status: string;
 }
