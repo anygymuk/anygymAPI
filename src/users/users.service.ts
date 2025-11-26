@@ -111,5 +111,69 @@ export class UsersService {
   async verifyAuth0IdMatches(auth0Id: string, requestedAuth0Id: string): Promise<boolean> {
     return auth0Id === requestedAuth0Id;
   }
+
+  async update(auth0Id: string, updateData: {
+    fullName?: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    addressCity?: string;
+    addressPostcode?: string;
+    dateOfBirth?: Date;
+    emergencyContactName?: string;
+    emergencyContactNumber?: string;
+  }): Promise<{ message: string }> {
+    try {
+      this.logger.log(`Updating user with auth0_id: ${auth0Id}`);
+
+      // Build update object with only provided fields
+      const updateObject: any = {};
+      
+      if (updateData.fullName !== undefined) {
+        updateObject.fullName = updateData.fullName;
+      }
+      if (updateData.addressLine1 !== undefined) {
+        updateObject.addressLine1 = updateData.addressLine1;
+      }
+      if (updateData.addressLine2 !== undefined) {
+        updateObject.addressLine2 = updateData.addressLine2;
+      }
+      if (updateData.addressCity !== undefined) {
+        updateObject.addressCity = updateData.addressCity;
+      }
+      if (updateData.addressPostcode !== undefined) {
+        updateObject.addressPostcode = updateData.addressPostcode;
+      }
+      if (updateData.dateOfBirth !== undefined) {
+        updateObject.dateOfBirth = updateData.dateOfBirth;
+      }
+      if (updateData.emergencyContactName !== undefined) {
+        updateObject.emergencyContactName = updateData.emergencyContactName;
+      }
+      if (updateData.emergencyContactNumber !== undefined) {
+        updateObject.emergencyContactNumber = updateData.emergencyContactNumber;
+      }
+
+      // Check if there's anything to update
+      if (Object.keys(updateObject).length === 0) {
+        throw new Error('No fields provided for update');
+      }
+
+      // Update the user
+      const result = await this.userRepository.update(
+        { auth0Id },
+        updateObject,
+      );
+
+      if (result.affected === 0) {
+        throw new Error('User not found or no changes made');
+      }
+
+      this.logger.log(`User updated successfully: ${auth0Id}`);
+      return { message: 'User updated successfully' };
+    } catch (error) {
+      this.logger.error(`Error updating user: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
 }
 
