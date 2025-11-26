@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GymsModule } from './gyms/gyms.module';
+import { UsersModule } from './users/users.module';
 import { Gym } from './gyms/entities/gym.entity';
 import { GymChain } from './gyms/entities/gym-chain.entity';
+import { User } from './users/entities/user.entity';
 
 @Module({
   imports: [
@@ -23,7 +25,7 @@ import { GymChain } from './gyms/entities/gym-chain.entity';
         return {
           type: 'postgres',
           url: databaseUrl,
-          entities: [Gym, GymChain],
+          entities: [Gym, GymChain, User],
           synchronize: false,
           ssl: {
             rejectUnauthorized: false,
@@ -38,6 +40,7 @@ import { GymChain } from './gyms/entities/gym-chain.entity';
       inject: [ConfigService],
     }),
     GymsModule,
+    UsersModule,
   ],
 })
 export class AppModule {}
