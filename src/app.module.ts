@@ -3,9 +3,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GymsModule } from './gyms/gyms.module';
 import { UsersModule } from './users/users.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { Gym } from './gyms/entities/gym.entity';
 import { GymChain } from './gyms/entities/gym-chain.entity';
 import { User } from './users/entities/user.entity';
+import { Subscription } from './subscriptions/entities/subscription.entity';
 
 @Module({
   imports: [
@@ -25,7 +27,7 @@ import { User } from './users/entities/user.entity';
         return {
           type: 'postgres',
           url: databaseUrl,
-          entities: [Gym, GymChain, User],
+          entities: [Gym, GymChain, User, Subscription],
           synchronize: false,
           ssl: {
             rejectUnauthorized: false,
@@ -41,6 +43,7 @@ import { User } from './users/entities/user.entity';
     }),
     GymsModule,
     UsersModule,
+    SubscriptionsModule,
   ],
 })
 export class AppModule {}
