@@ -68,19 +68,30 @@ export class StripeService {
       .createQueryBuilder('gym')
       .leftJoinAndSelect('gym.gymChain', 'gymChain')
       .where('gym.status = :status', { status: 'active' })
+      .andWhere('gym.latitude IS NOT NULL')
+      .andWhere('gym.longitude IS NOT NULL')
       .getMany();
 
+    // Filter out any gyms with null coordinates (safety check)
+    const gymsWithCoordinates = gyms.filter(
+      (gym) => gym.latitude != null && gym.longitude != null,
+    );
+
+    if (gymsWithCoordinates.length === 0) {
+      this.logger.warn('No gyms with coordinates found');
+      return [];
+    }
+
     // Calculate distances and sort
-    const gymsWithDistance = gyms
-      .map((gym) => ({
-        gym,
-        distance: this.calculateDistance(
-          latitude,
-          longitude,
-          parseFloat(gym.latitude.toString()),
-          parseFloat(gym.longitude.toString()),
-        ),
-      }))
+    const gymsWithDistance = gymsWithCoordinates
+      .map((gym) => {
+        const gymLat = parseFloat(gym.latitude.toString());
+        const gymLon = parseFloat(gym.longitude.toString());
+        return {
+          gym,
+          distance: this.calculateDistance(latitude, longitude, gymLat, gymLon),
+        };
+      })
       .sort((a, b) => a.distance - b.distance)
       .slice(0, 3)
       .map((item) => item.gym);
