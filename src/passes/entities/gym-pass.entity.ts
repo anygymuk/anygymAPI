@@ -33,7 +33,7 @@ export class GymPass {
   @Column({ name: 'used_at', type: 'timestamp', nullable: true })
   usedAt: Date;
 
-  @Column({ name: 'qrcode_url', nullable: true })
+  @Column({ name: 'qr_code_url', nullable: true })
   qrcodeUrl: string;
 
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
