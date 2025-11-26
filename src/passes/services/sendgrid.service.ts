@@ -8,7 +8,9 @@ export class SendGridService {
   constructor() {
     const apiKey = process.env.SENDGRID_API_KEY;
     if (apiKey) {
-      sgMail.setApiKey(apiKey);
+      // @sendgrid/mail is a CommonJS module, so we need to access the default export
+      const mail = sgMail.default || sgMail;
+      mail.setApiKey(apiKey);
     } else {
       this.logger.warn('SENDGRID_API_KEY not set in environment variables');
     }
@@ -44,7 +46,9 @@ export class SendGridService {
         },
       };
 
-      await sgMail.send(msg);
+      // @sendgrid/mail is a CommonJS module, so we need to access the default export
+      const mail = sgMail.default || sgMail;
+      await mail.send(msg);
       this.logger.log(`Pass email sent successfully to ${data.to}`);
     } catch (error) {
       this.logger.error(`Error sending email: ${error.message}`, error.stack);
