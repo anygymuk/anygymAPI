@@ -277,9 +277,18 @@ export class StripeService {
         );
       }
 
+      // Helper function to normalize dates (handle both Date objects and strings)
+      const normalizeDate = (date: Date | string | null | undefined): Date | null => {
+        if (!date) return null;
+        if (date instanceof Date) return date;
+        if (typeof date === 'string') return new Date(date);
+        return null;
+      };
+
       // Track if period dates are being updated to reset usage counters
-      const oldPeriodStart = dbSubscription.startDate;
-      const oldPeriodEnd = dbSubscription.nextBillingDate;
+      // Convert to Date objects for comparison (DB might return strings)
+      const oldPeriodStart = normalizeDate(dbSubscription.startDate);
+      const oldPeriodEnd = normalizeDate(dbSubscription.nextBillingDate);
       
       // Map webhook data to database fields
       const updateData: Partial<Subscription> = {};
