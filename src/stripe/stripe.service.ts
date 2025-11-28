@@ -287,17 +287,26 @@ export class StripeService {
       // Map current_period_end to nextBillingDate
       // Note: The user mentioned next_pending_invoice_item_invoice, but that's not a standard
       // Stripe subscription field. Using current_period_end as the next billing date.
-      if (subscription.current_period_end) {
-        updateData.nextBillingDate = new Date(
-          subscription.current_period_end * 1000,
-        );
+      // Also check items.data[0] if current_period_end is not directly on subscription
+      let periodEnd: number | undefined = subscription.current_period_end;
+      if (!periodEnd && subscription.items?.data?.[0]) {
+        // Fallback: check if period info is in items (though this is non-standard)
+        periodEnd = (subscription.items.data[0] as any).current_period_end;
+      }
+      
+      if (periodEnd) {
+        updateData.nextBillingDate = new Date(periodEnd * 1000);
       }
 
       // Map current_period_start to startDate
-      if (subscription.current_period_start) {
-        updateData.startDate = new Date(
-          subscription.current_period_start * 1000,
-        );
+      let periodStart: number | undefined = subscription.current_period_start;
+      if (!periodStart && subscription.items?.data?.[0]) {
+        // Fallback: check if period info is in items (though this is non-standard)
+        periodStart = (subscription.items.data[0] as any).current_period_start;
+      }
+      
+      if (periodStart) {
+        updateData.startDate = new Date(periodStart * 1000);
       }
 
       // Verify stripe_subscription_id matches (should always match since we found by it)
@@ -309,11 +318,11 @@ export class StripeService {
       }
 
       // Check if period dates changed - if so, reset usage counters
-      const newPeriodStart = subscription.current_period_start
-        ? new Date(subscription.current_period_start * 1000)
+      const newPeriodStart = periodStart
+        ? new Date(periodStart * 1000)
         : null;
-      const newPeriodEnd = subscription.current_period_end
-        ? new Date(subscription.current_period_end * 1000)
+      const newPeriodEnd = periodEnd
+        ? new Date(periodEnd * 1000)
         : null;
 
       const periodStartChanged =
@@ -334,15 +343,20 @@ export class StripeService {
         );
       }
 
-      // Update the subscription
-      await this.subscriptionRepository.update(
-        { id: dbSubscription.id },
-        updateData,
-      );
-
-      this.logger.log(
-        `Subscription updated successfully: ${subscription.id}`,
-      );
+      // Only update if there are fields to update
+      if (Object.keys(updateData).length > 0) {
+        await this.subscriptionRepository.update(
+          { id: dbSubscription.id },
+          updateData,
+        );
+        this.logger.log(
+          `Subscription updated successfully: ${subscription.id}`,
+        );
+      } else {
+        this.logger.log(
+          `No updates needed for subscription: ${subscription.id}`,
+        );
+      }
     } catch (error) {
       this.logger.error(
         `Error processing subscription update: ${error.message}`,
