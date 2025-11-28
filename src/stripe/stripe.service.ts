@@ -234,9 +234,18 @@ export class StripeService {
         guestPassesUsed: 0,
       });
 
-      await this.subscriptionRepository.save(newSubscription);
+      const savedSubscription = await this.subscriptionRepository.save(newSubscription);
+      
+      // Verify the dates were actually saved to the database
+      const verifiedSubscription = await this.subscriptionRepository.findOne({
+        where: { id: savedSubscription.id },
+      });
+      
       this.logger.log(
-        `Subscription created for user: ${auth0Id} - startDate: ${newSubscription.startDate}, nextBillingDate: ${newSubscription.nextBillingDate}`,
+        `Subscription created for user: ${auth0Id} - ID: ${savedSubscription.id}`,
+      );
+      this.logger.log(
+        `Verified saved dates - startDate: ${verifiedSubscription?.startDate}, nextBillingDate: ${verifiedSubscription?.nextBillingDate}`,
       );
 
       // Step 7: Geocode postcode if available
@@ -322,11 +331,14 @@ export class StripeService {
 
       if (!dbSubscription) {
         this.logger.warn(
-          `Subscription not found for stripe_subscription_id: ${subscription.id}`,
+          `Subscription not found for stripe_subscription_id: ${subscription.id}. This may happen if the update webhook fires before the checkout webhook completes.`,
         );
-        throw new Error(
-          `Subscription not found for stripe_subscription_id: ${subscription.id}`,
+        // Don't throw error - just log and return
+        // The subscription will be created by the checkout webhook
+        this.logger.log(
+          `Skipping update for subscription ${subscription.id} - subscription not yet created in database`,
         );
+        return;
       }
 
       // Helper function to normalize dates (handle both Date objects and strings)
@@ -429,8 +441,17 @@ export class StripeService {
           { id: dbSubscription.id },
           updateData,
         );
+        
+        // Verify the dates were actually saved to the database
+        const verifiedSubscription = await this.subscriptionRepository.findOne({
+          where: { id: dbSubscription.id },
+        });
+        
         this.logger.log(
           `Subscription updated successfully: ${subscription.id}`,
+        );
+        this.logger.log(
+          `Verified updated dates - startDate: ${verifiedSubscription?.startDate}, nextBillingDate: ${verifiedSubscription?.nextBillingDate}`,
         );
       } else {
         this.logger.log(
