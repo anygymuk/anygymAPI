@@ -5,6 +5,7 @@ import { PassesService } from './passes.service';
 import { GymPass } from './entities/gym-pass.entity';
 import { Gym } from '../gyms/entities/gym.entity';
 import { PassPricing } from './entities/pass-pricing.entity';
+import { Subscription } from '../subscriptions/entities/subscription.entity';
 import { Auth0Guard } from '../users/guards/auth0.guard';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { UsersModule } from '../users/users.module';
@@ -12,7 +13,7 @@ import { SendGridService } from './services/sendgrid.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([GymPass, Gym, PassPricing]),
+    TypeOrmModule.forFeature([GymPass, Gym, PassPricing, Subscription]),
     SubscriptionsModule,
     UsersModule,
   ],

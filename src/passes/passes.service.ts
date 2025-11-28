@@ -8,6 +8,7 @@ import { GeneratePassDto } from './dto/generate-pass.dto';
 import { PassesWithSubscriptionResponseDto, SubscriptionSummaryDto } from './dto/passes-with-subscription-response.dto';
 import { Gym } from '../gyms/entities/gym.entity';
 import { PassPricing } from './entities/pass-pricing.entity';
+import { Subscription } from '../subscriptions/entities/subscription.entity';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
 import { SendGridService } from './services/sendgrid.service';
@@ -23,6 +24,8 @@ export class PassesService {
     private gymRepository: Repository<Gym>,
     @InjectRepository(PassPricing)
     private passPricingRepository: Repository<PassPricing>,
+    @InjectRepository(Subscription)
+    private subscriptionRepository: Repository<Subscription>,
     private subscriptionsService: SubscriptionsService,
     private usersService: UsersService,
     private sendGridService: SendGridService,
@@ -167,6 +170,13 @@ export class PassesService {
         throw error;
       }
 
+      // Step 1.5: Check if user has credits available (visits_used < monthly_limit)
+      if (subscription.visits_used >= subscription.monthly_limit) {
+        throw new BadRequestException(
+          `You are out of passes for this month. You have used ${subscription.visits_used} of ${subscription.monthly_limit} available passes.`,
+        );
+      }
+
       // Step 2: Get gym details
       const gym = await this.gymRepository.findOne({
         where: { id: generatePassDto.gym_id },
@@ -221,6 +231,25 @@ export class PassesService {
 
       const savedPass = await this.gymPassRepository.save(newPass);
       this.logger.log(`Pass created successfully with ID: ${savedPass.id}`);
+
+      // Step 6.5: Increment visits_used in the subscription
+      // Fetch the subscription entity to update it
+      const subscriptionEntity = await this.subscriptionRepository.findOne({
+        where: { userId: auth0Id, status: 'active' },
+      });
+
+      if (subscriptionEntity) {
+        subscriptionEntity.visitsUsed += 1;
+        await this.subscriptionRepository.save(subscriptionEntity);
+        this.logger.log(
+          `Incremented visits_used for subscription ${subscriptionEntity.id}. New value: ${subscriptionEntity.visitsUsed}`,
+        );
+      } else {
+        this.logger.error(
+          `Could not find subscription entity to update visits_used for user: ${auth0Id}`,
+        );
+        // Don't throw error - pass was already created, just log the issue
+      }
 
       // Step 7: Get user details for email
       const user = await this.usersService.findOneByAuth0Id(auth0Id);
