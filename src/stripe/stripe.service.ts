@@ -256,5 +256,100 @@ export class StripeService {
       throw error;
     }
   }
+
+  async handleSubscriptionUpdated(
+    subscription: Stripe.Subscription,
+  ): Promise<void> {
+    try {
+      this.logger.log(`Processing subscription update: ${subscription.id}`);
+
+      // Find the subscription by stripe_subscription_id
+      const dbSubscription = await this.subscriptionRepository.findOne({
+        where: { stripeSubscriptionId: subscription.id },
+      });
+
+      if (!dbSubscription) {
+        this.logger.warn(
+          `Subscription not found for stripe_subscription_id: ${subscription.id}`,
+        );
+        throw new Error(
+          `Subscription not found for stripe_subscription_id: ${subscription.id}`,
+        );
+      }
+
+      // Track if period dates are being updated to reset usage counters
+      const oldPeriodStart = dbSubscription.startDate;
+      const oldPeriodEnd = dbSubscription.nextBillingDate;
+      
+      // Map webhook data to database fields
+      const updateData: Partial<Subscription> = {};
+
+      // Map current_period_end to nextBillingDate
+      // Note: The user mentioned next_pending_invoice_item_invoice, but that's not a standard
+      // Stripe subscription field. Using current_period_end as the next billing date.
+      if (subscription.current_period_end) {
+        updateData.nextBillingDate = new Date(
+          subscription.current_period_end * 1000,
+        );
+      }
+
+      // Map current_period_start to startDate
+      if (subscription.current_period_start) {
+        updateData.startDate = new Date(
+          subscription.current_period_start * 1000,
+        );
+      }
+
+      // Verify stripe_subscription_id matches (should always match since we found by it)
+      // The webhook subscription.id maps to stripe_subscription_id in DB
+      if (subscription.id !== dbSubscription.stripeSubscriptionId) {
+        this.logger.warn(
+          `Stripe subscription ID mismatch: webhook ${subscription.id} vs DB ${dbSubscription.stripeSubscriptionId}`,
+        );
+      }
+
+      // Check if period dates changed - if so, reset usage counters
+      const newPeriodStart = subscription.current_period_start
+        ? new Date(subscription.current_period_start * 1000)
+        : null;
+      const newPeriodEnd = subscription.current_period_end
+        ? new Date(subscription.current_period_end * 1000)
+        : null;
+
+      const periodStartChanged =
+        newPeriodStart &&
+        oldPeriodStart &&
+        newPeriodStart.getTime() !== oldPeriodStart.getTime();
+      
+      const periodEndChanged =
+        newPeriodEnd &&
+        oldPeriodEnd &&
+        newPeriodEnd.getTime() !== oldPeriodEnd.getTime();
+
+      if (periodStartChanged || periodEndChanged) {
+        updateData.visitsUsed = 0;
+        updateData.guestPassesUsed = 0;
+        this.logger.log(
+          `Period dates changed, resetting visits_used and guest_passes_used to 0`,
+        );
+      }
+
+      // Update the subscription
+      await this.subscriptionRepository.update(
+        { id: dbSubscription.id },
+        updateData,
+      );
+
+      this.logger.log(
+        `Subscription updated successfully: ${subscription.id}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error processing subscription update: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
 }
 

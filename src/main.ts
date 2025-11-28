@@ -12,6 +12,7 @@ async function bootstrap() {
   // Configure raw body for Stripe webhook
   // Stripe requires raw body for signature verification
   app.use('/stripe/checkout', express.raw({ type: 'application/json' }));
+  app.use('/stripe/updates', express.raw({ type: 'application/json' }));
   
   // Enable validation pipes
   app.useGlobalPipes(new ValidationPipe({
