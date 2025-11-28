@@ -150,14 +150,21 @@ export class StripeService {
       let subscription: Stripe.Subscription | null = null;
       if (subscriptionId) {
         try {
-          subscription = await this.stripe.subscriptions.retrieve(subscriptionId);
-          this.logger.log(`Retrieved subscription ${subscriptionId} from Stripe`);
+          // Retrieve subscription with expanded data to ensure we get all fields
+          subscription = await this.stripe.subscriptions.retrieve(subscriptionId, {
+            expand: ['items.data'],
+          });
+          this.logger.log(
+            `Retrieved subscription ${subscriptionId} from Stripe - current_period_start: ${subscription.current_period_start}, current_period_end: ${subscription.current_period_end}`,
+          );
         } catch (error) {
           this.logger.error(
             `Failed to retrieve subscription ${subscriptionId}: ${error.message}`,
           );
           // Continue without subscription data - will use defaults
         }
+      } else {
+        this.logger.warn('No subscription ID found in checkout session');
       }
 
       // Determine subscription limits based on tier
@@ -170,12 +177,21 @@ export class StripeService {
       const limits = tierLimits[tier.toLowerCase()] || tierLimits.standard;
 
       // Step 6: Extract current_period_start and current_period_end from subscription
-      // Check both direct subscription properties and items.data[0] as fallback
+      // These should be directly on the subscription object from Stripe
       let periodStart: number | undefined = subscription?.current_period_start;
       let periodEnd: number | undefined = subscription?.current_period_end;
       
+      // Log what we found
+      this.logger.log(
+        `Extracted period dates - periodStart: ${periodStart}, periodEnd: ${periodEnd}`,
+      );
+
       // Fallback: check items.data[0] if period info is not directly on subscription
+      // (though this is non-standard - period dates are subscription-level, not item-level)
       if ((!periodStart || !periodEnd) && subscription?.items?.data?.[0]) {
+        this.logger.warn(
+          `Period dates not found on subscription object, checking items.data[0]`,
+        );
         if (!periodStart) {
           periodStart = (subscription.items.data[0] as any).current_period_start;
         }
@@ -195,11 +211,11 @@ export class StripeService {
       // Log the period dates being recorded
       if (periodStart && periodEnd) {
         this.logger.log(
-          `Recording period dates - start: ${startDate.toISOString()}, end: ${nextBillingDate?.toISOString()}`,
+          `Recording period dates in DB - startDate: ${startDate.toISOString()}, nextBillingDate: ${nextBillingDate?.toISOString()}`,
         );
       } else {
         this.logger.warn(
-          `Period dates not available in subscription - using defaults. startDate: ${startDate.toISOString()}`,
+          `Period dates not available in subscription - periodStart: ${periodStart}, periodEnd: ${periodEnd}. Using defaults - startDate: ${startDate.toISOString()}, nextBillingDate: ${nextBillingDate?.toISOString() || 'null'}`,
         );
       }
 
@@ -219,7 +235,9 @@ export class StripeService {
       });
 
       await this.subscriptionRepository.save(newSubscription);
-      this.logger.log(`Subscription created for user: ${auth0Id}`);
+      this.logger.log(
+        `Subscription created for user: ${auth0Id} - startDate: ${newSubscription.startDate}, nextBillingDate: ${newSubscription.nextBillingDate}`,
+      );
 
       // Step 7: Geocode postcode if available
       let coordinates: { latitude: number; longitude: number } | null = null;
@@ -330,26 +348,45 @@ export class StripeService {
       // Map current_period_end to nextBillingDate
       // Note: The user mentioned next_pending_invoice_item_invoice, but that's not a standard
       // Stripe subscription field. Using current_period_end as the next billing date.
-      // Also check items.data[0] if current_period_end is not directly on subscription
       let periodEnd: number | undefined = subscription.current_period_end;
-      if (!periodEnd && subscription.items?.data?.[0]) {
-        // Fallback: check if period info is in items (though this is non-standard)
-        periodEnd = (subscription.items.data[0] as any).current_period_end;
+      let periodStart: number | undefined = subscription.current_period_start;
+      
+      // Log what we received from the webhook
+      this.logger.log(
+        `Webhook subscription data - current_period_start: ${periodStart}, current_period_end: ${periodEnd}`,
+      );
+      
+      // Fallback: check items.data[0] if period info is not directly on subscription
+      // (though this is non-standard - period dates are subscription-level, not item-level)
+      if ((!periodStart || !periodEnd) && subscription.items?.data?.[0]) {
+        this.logger.warn(
+          `Period dates not found on subscription object, checking items.data[0]`,
+        );
+        if (!periodStart) {
+          periodStart = (subscription.items.data[0] as any).current_period_start;
+        }
+        if (!periodEnd) {
+          periodEnd = (subscription.items.data[0] as any).current_period_end;
+        }
       }
       
       if (periodEnd) {
         updateData.nextBillingDate = new Date(periodEnd * 1000);
+        this.logger.log(
+          `Setting nextBillingDate to: ${updateData.nextBillingDate.toISOString()}`,
+        );
+      } else {
+        this.logger.warn('current_period_end not found in webhook subscription object');
       }
 
       // Map current_period_start to startDate
-      let periodStart: number | undefined = subscription.current_period_start;
-      if (!periodStart && subscription.items?.data?.[0]) {
-        // Fallback: check if period info is in items (though this is non-standard)
-        periodStart = (subscription.items.data[0] as any).current_period_start;
-      }
-      
       if (periodStart) {
         updateData.startDate = new Date(periodStart * 1000);
+        this.logger.log(
+          `Setting startDate to: ${updateData.startDate.toISOString()}`,
+        );
+      } else {
+        this.logger.warn('current_period_start not found in webhook subscription object');
       }
 
       // Verify stripe_subscription_id matches (should always match since we found by it)
