@@ -177,6 +177,17 @@ export class PassesService {
         );
       }
 
+      // Step 1.6: Check if user already has an active pass
+      const existingActivePass = await this.gymPassRepository.findOne({
+        where: { userId: auth0Id, status: 'active' },
+      });
+
+      if (existingActivePass) {
+        throw new BadRequestException(
+          'Only one active pass at a time. You must use or cancel your current active pass before generating a new one.',
+        );
+      }
+
       // Step 2: Get gym details
       const gym = await this.gymRepository.findOne({
         where: { id: generatePassDto.gym_id },
