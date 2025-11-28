@@ -2,6 +2,7 @@ export class PassResponseDto {
   id: number;
   user_id: string;
   gym_id: number;
+  gym_name: string | null;
   gym_chain_id: number | null;
   gym_chain_name: string | null;
   gym_chain_logo: string | null;
