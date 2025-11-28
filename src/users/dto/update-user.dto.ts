@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsDateString } from 'class-validator';
+import { IsOptional, IsString, IsDateString, IsBoolean } from 'class-validator';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -32,5 +32,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   emergency_contact_number?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  onboarding_completed?: boolean;
 }
 

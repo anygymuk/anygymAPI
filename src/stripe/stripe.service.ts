@@ -133,10 +133,13 @@ export class StripeService {
 
       this.logger.log(`Processing subscription for auth0_id: ${auth0Id}, tier: ${tier}`);
 
-      // Step 3: Update app_users table with Stripe customer ID
+      // Step 3: Update app_users table with Stripe customer ID and mark onboarding as completed
       await this.userRepository.update(
         { auth0Id },
-        { stripeCustomerId: customerId },
+        { 
+          stripeCustomerId: customerId,
+          onboardingCompleted: true,
+        },
       );
 
       // Step 4: Cancel any existing active subscriptions

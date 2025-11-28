@@ -66,6 +66,7 @@ export class UsersController {
         dateOfBirth?: Date;
         emergencyContactName?: string;
         emergencyContactNumber?: string;
+        onboardingCompleted?: boolean;
       } = {};
 
       if (updateUserDto.full_name !== undefined) {
@@ -91,6 +92,9 @@ export class UsersController {
       }
       if (updateUserDto.emergency_contact_number !== undefined) {
         updateData.emergencyContactNumber = updateUserDto.emergency_contact_number;
+      }
+      if (updateUserDto.onboarding_completed !== undefined) {
+        updateData.onboardingCompleted = updateUserDto.onboarding_completed;
       }
 
       // Update the user - this ensures users can only update their own data

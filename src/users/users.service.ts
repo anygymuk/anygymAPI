@@ -126,6 +126,7 @@ export class UsersService {
     dateOfBirth?: Date;
     emergencyContactName?: string;
     emergencyContactNumber?: string;
+    onboardingCompleted?: boolean;
   }): Promise<{ message: string }> {
     try {
       this.logger.log(`Updating user with auth0_id: ${auth0Id}`);
@@ -156,6 +157,9 @@ export class UsersService {
       }
       if (updateData.emergencyContactNumber !== undefined) {
         updateObject.emergencyContactNumber = updateData.emergencyContactNumber;
+      }
+      if (updateData.onboardingCompleted !== undefined) {
+        updateObject.onboardingCompleted = updateData.onboardingCompleted;
       }
 
       // Check if there's anything to update
