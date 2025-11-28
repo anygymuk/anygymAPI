@@ -13,6 +13,7 @@ import { UsersService } from './users.service';
 import { Auth0Guard } from './guards/auth0.guard';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { PassResponseDto } from '../passes/dto/pass-response.dto';
 
 @Controller('user')
 @UseGuards(Auth0Guard)
@@ -105,6 +106,36 @@ export class UsersController {
       }
       
       throw new BadRequestException(`Failed to update user: ${error.message}`);
+    }
+  }
+
+  @Get('active_pass')
+  async getActivePass(
+    @Headers('auth0_id') auth0Id: string,
+  ): Promise<PassResponseDto | { message: string }> {
+    try {
+      this.logger.log(`GET /user/active_pass called with auth0_id: ${auth0Id}`);
+
+      // The Auth0Guard ensures auth0_id is present in headers
+      // Fetch the active pass by the auth0_id from the header
+      // This ensures users can only access their own passes
+      const result = await this.usersService.findActivePass(auth0Id);
+
+      // If result is a pass object, verify it belongs to the requesting user
+      if ('id' in result && result.user_id !== auth0Id) {
+        this.logger.warn(
+          `Pass user_id mismatch: requested ${auth0Id}, got ${result.user_id}`,
+        );
+        throw new ForbiddenException('Access denied: You can only access your own passes');
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error(`Error in getActivePass: ${error.message}`, error.stack);
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw error;
     }
   }
 }

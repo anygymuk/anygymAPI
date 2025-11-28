@@ -2,7 +2,10 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { GymPass } from '../passes/entities/gym-pass.entity';
+import { Gym } from '../gyms/entities/gym.entity';
 import { UserResponseDto } from './dto/user-response.dto';
+import { PassResponseDto } from '../passes/dto/pass-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -11,6 +14,8 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(GymPass)
+    private gymPassRepository: Repository<GymPass>,
   ) {}
 
   /**
@@ -173,6 +178,86 @@ export class UsersService {
     } catch (error) {
       this.logger.error(`Error updating user: ${error.message}`, error.stack);
       throw error;
+    }
+  }
+
+  async findActivePass(auth0Id: string): Promise<PassResponseDto | { message: string }> {
+    try {
+      this.logger.log(`Looking up active pass for auth0_id: ${auth0Id}`);
+
+      // Build query with joins to gyms and gym_chains
+      const queryBuilder = this.gymPassRepository
+        .createQueryBuilder('pass')
+        .leftJoinAndSelect('pass.gym', 'gym')
+        .leftJoinAndSelect('gym.gymChain', 'gymChain')
+        .select([
+          'pass.id',
+          'pass.userId',
+          'pass.gymId',
+          'gym.name',
+          'gym.gymChainId',
+          'gymChain.name',
+          'gymChain.logo',
+          'pass.passCode',
+          'pass.status',
+          'pass.validUntil',
+          'pass.usedAt',
+          'pass.qrcodeUrl',
+          'pass.createdAt',
+          'pass.updatedAt',
+          'pass.subscriptionTier',
+        ])
+        .where('pass.userId = :auth0Id', { auth0Id })
+        .andWhere('pass.status = :status', { status: 'active' })
+        .orderBy('pass.createdAt', 'DESC')
+        .limit(1);
+
+      const pass = await queryBuilder.getOne();
+
+      if (!pass) {
+        this.logger.log(`No active pass found for user: ${auth0Id}`);
+        return { message: 'no active passes' };
+      }
+
+      this.logger.log(`Active pass found for user: ${auth0Id}, pass ID: ${pass.id}`);
+
+      // Format dates and transform to response DTO
+      const formatDate = (date: Date | null): string | null => {
+        if (!date) return null;
+        if (date instanceof Date) {
+          return date.toISOString();
+        }
+        if (typeof date === 'string') {
+          return new Date(date).toISOString();
+        }
+        return null;
+      };
+
+      const response: PassResponseDto = {
+        id: pass.id,
+        user_id: pass.userId,
+        gym_id: pass.gymId,
+        gym_name: pass.gym?.name || null,
+        gym_chain_id: pass.gym?.gymChainId || null,
+        gym_chain_name: pass.gym?.gymChain?.name || null,
+        gym_chain_logo: pass.gym?.gymChain?.logo || null,
+        pass_code: pass.passCode,
+        status: pass.status,
+        valid_until: formatDate(pass.validUntil),
+        used_at: formatDate(pass.usedAt),
+        qrcode_url: pass.qrcodeUrl || null,
+        created_at: formatDate(pass.createdAt) || '',
+        updated_at: formatDate(pass.updatedAt) || '',
+        subscription_tier: pass.subscriptionTier || null,
+      };
+
+      return this.removeEmptyValues(response) as PassResponseDto;
+    } catch (error) {
+      this.logger.error(
+        `Error in findActivePass: ${error.message}`,
+        error.stack,
+      );
+      throw new Error(`Failed to fetch active pass: ${error.message}`);
     }
   }
 }
