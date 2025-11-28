@@ -31,6 +31,12 @@ export class Subscription {
   @Column({ name: 'next_billing_date', type: 'date', nullable: true })
   nextBillingDate: Date;
 
+  @Column({ name: 'current_period_start', type: 'timestamptz', nullable: true })
+  currentPeriodStart: Date;
+
+  @Column({ name: 'current_period_end', type: 'timestamptz', nullable: true })
+  currentPeriodEnd: Date;
+
   @Column()
   status: string;
 

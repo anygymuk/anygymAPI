@@ -207,17 +207,30 @@ export class StripeService {
       const nextBillingDate = periodEnd
         ? new Date(periodEnd * 1000)
         : null;
+      
+      // Also set current_period_start and current_period_end (TIMESTAMP WITH TIME ZONE columns)
+      const currentPeriodStart = periodStart
+        ? new Date(periodStart * 1000)
+        : null;
+      const currentPeriodEnd = periodEnd
+        ? new Date(periodEnd * 1000)
+        : null;
 
       // Log the period dates being recorded
       if (periodStart && periodEnd) {
         this.logger.log(
-          `Recording period dates in DB - startDate: ${startDate.toISOString()}, nextBillingDate: ${nextBillingDate?.toISOString()}`,
+          `Recording period dates in DB - startDate: ${startDate.toISOString()}, nextBillingDate: ${nextBillingDate?.toISOString()}, currentPeriodStart: ${currentPeriodStart?.toISOString()}, currentPeriodEnd: ${currentPeriodEnd?.toISOString()}`,
         );
       } else {
         this.logger.warn(
           `Period dates not available in subscription - periodStart: ${periodStart}, periodEnd: ${periodEnd}. Using defaults - startDate: ${startDate.toISOString()}, nextBillingDate: ${nextBillingDate?.toISOString() || 'null'}`,
         );
       }
+
+      // Log the exact values being set before creating the entity
+      this.logger.log(
+        `Creating subscription entity with - startDate: ${startDate} (type: ${typeof startDate}), nextBillingDate: ${nextBillingDate} (type: ${typeof nextBillingDate})`,
+      );
 
       const newSubscription = this.subscriptionRepository.create({
         userId: auth0Id,
@@ -227,6 +240,8 @@ export class StripeService {
         price: limits.price,
         startDate,
         nextBillingDate,
+        currentPeriodStart,
+        currentPeriodEnd,
         status: 'active',
         stripeSubscriptionId: subscriptionId || null,
         stripeCustomerId: customerId,
@@ -234,18 +249,37 @@ export class StripeService {
         guestPassesUsed: 0,
       });
 
+      // Log what's in the entity before saving
+      this.logger.log(
+        `Entity before save - startDate: ${newSubscription.startDate}, nextBillingDate: ${newSubscription.nextBillingDate}`,
+      );
+
       const savedSubscription = await this.subscriptionRepository.save(newSubscription);
       
-      // Verify the dates were actually saved to the database
+      // Log what was returned from save
+      this.logger.log(
+        `Entity after save - startDate: ${savedSubscription.startDate}, nextBillingDate: ${savedSubscription.nextBillingDate}`,
+      );
+      
+      // Verify the dates were actually saved to the database using TypeORM
       const verifiedSubscription = await this.subscriptionRepository.findOne({
         where: { id: savedSubscription.id },
       });
+      
+      // Also verify using raw SQL query to see what's actually in the database
+      const rawResult = await this.subscriptionRepository.query(
+        `SELECT start_date, next_billing_date, current_period_start, current_period_end FROM subscriptions WHERE id = $1`,
+        [savedSubscription.id],
+      );
       
       this.logger.log(
         `Subscription created for user: ${auth0Id} - ID: ${savedSubscription.id}`,
       );
       this.logger.log(
-        `Verified saved dates - startDate: ${verifiedSubscription?.startDate}, nextBillingDate: ${verifiedSubscription?.nextBillingDate}`,
+        `Verified saved dates (TypeORM) - startDate: ${verifiedSubscription?.startDate}, nextBillingDate: ${verifiedSubscription?.nextBillingDate}, currentPeriodStart: ${verifiedSubscription?.currentPeriodStart}, currentPeriodEnd: ${verifiedSubscription?.currentPeriodEnd}`,
+      );
+      this.logger.log(
+        `Verified saved dates (Raw SQL) - start_date: ${rawResult[0]?.start_date}, next_billing_date: ${rawResult[0]?.next_billing_date}, current_period_start: ${rawResult[0]?.current_period_start}, current_period_end: ${rawResult[0]?.current_period_end}`,
       );
 
       // Step 7: Geocode postcode if available
@@ -351,8 +385,9 @@ export class StripeService {
 
       // Track if period dates are being updated to reset usage counters
       // Convert to Date objects for comparison (DB might return strings)
-      const oldPeriodStart = normalizeDate(dbSubscription.startDate);
-      const oldPeriodEnd = normalizeDate(dbSubscription.nextBillingDate);
+      // Use currentPeriodStart and currentPeriodEnd for comparison (the TIMESTAMP columns)
+      const oldPeriodStart = normalizeDate(dbSubscription.currentPeriodStart);
+      const oldPeriodEnd = normalizeDate(dbSubscription.currentPeriodEnd);
       
       // Map webhook data to database fields
       const updateData: Partial<Subscription> = {};
@@ -384,18 +419,20 @@ export class StripeService {
       
       if (periodEnd) {
         updateData.nextBillingDate = new Date(periodEnd * 1000);
+        updateData.currentPeriodEnd = new Date(periodEnd * 1000);
         this.logger.log(
-          `Setting nextBillingDate to: ${updateData.nextBillingDate.toISOString()}`,
+          `Setting nextBillingDate to: ${updateData.nextBillingDate.toISOString()}, currentPeriodEnd to: ${updateData.currentPeriodEnd.toISOString()}`,
         );
       } else {
         this.logger.warn('current_period_end not found in webhook subscription object');
       }
 
-      // Map current_period_start to startDate
+      // Map current_period_start to startDate and currentPeriodStart
       if (periodStart) {
         updateData.startDate = new Date(periodStart * 1000);
+        updateData.currentPeriodStart = new Date(periodStart * 1000);
         this.logger.log(
-          `Setting startDate to: ${updateData.startDate.toISOString()}`,
+          `Setting startDate to: ${updateData.startDate.toISOString()}, currentPeriodStart to: ${updateData.currentPeriodStart.toISOString()}`,
         );
       } else {
         this.logger.warn('current_period_start not found in webhook subscription object');
@@ -437,9 +474,18 @@ export class StripeService {
 
       // Only update if there are fields to update
       if (Object.keys(updateData).length > 0) {
-        await this.subscriptionRepository.update(
+        // Log what we're about to update
+        this.logger.log(
+          `Updating subscription ${dbSubscription.id} with data: ${JSON.stringify(updateData)}`,
+        );
+        
+        const updateResult = await this.subscriptionRepository.update(
           { id: dbSubscription.id },
           updateData,
+        );
+        
+        this.logger.log(
+          `Update result - affected rows: ${updateResult.affected}`,
         );
         
         // Verify the dates were actually saved to the database
@@ -451,7 +497,16 @@ export class StripeService {
           `Subscription updated successfully: ${subscription.id}`,
         );
         this.logger.log(
-          `Verified updated dates - startDate: ${verifiedSubscription?.startDate}, nextBillingDate: ${verifiedSubscription?.nextBillingDate}`,
+          `Verified updated dates - startDate: ${verifiedSubscription?.startDate}, nextBillingDate: ${verifiedSubscription?.nextBillingDate}, currentPeriodStart: ${verifiedSubscription?.currentPeriodStart}, currentPeriodEnd: ${verifiedSubscription?.currentPeriodEnd}`,
+        );
+        
+        // Also verify using raw SQL query
+        const rawUpdateResult = await this.subscriptionRepository.query(
+          `SELECT current_period_start, current_period_end FROM subscriptions WHERE id = $1`,
+          [dbSubscription.id],
+        );
+        this.logger.log(
+          `Verified updated dates (Raw SQL) - current_period_start: ${rawUpdateResult[0]?.current_period_start}, current_period_end: ${rawUpdateResult[0]?.current_period_end}`,
         );
       } else {
         this.logger.log(
