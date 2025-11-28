@@ -7,6 +7,8 @@ export class SubscriptionResponseDto {
   price: number;
   start_date: string;
   next_billing_date: string | null;
+  current_period_start?: string | null;
+  current_period_end?: string | null;
   status: string;
   stripe_subscription_id: string | null;
   stripe_customer_id: string | null;

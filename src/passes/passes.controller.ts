@@ -13,6 +13,7 @@ import { Auth0Guard } from '../users/guards/auth0.guard';
 import { PassResponseDto } from './dto/pass-response.dto';
 import { GetPassesDto } from './dto/get-passes.dto';
 import { GeneratePassDto } from './dto/generate-pass.dto';
+import { PassesWithSubscriptionResponseDto } from './dto/passes-with-subscription-response.dto';
 
 @Controller()
 @UseGuards(Auth0Guard)
@@ -25,26 +26,31 @@ export class PassesController {
   async getPasses(
     @Headers('auth0_id') auth0Id: string,
     @Query() query: GetPassesDto,
-  ): Promise<PassResponseDto[]> {
+  ): Promise<PassesWithSubscriptionResponseDto> {
     try {
-      this.logger.log(`GET /user/passes called with auth0_id: ${auth0Id}${query.status ? `, status: ${query.status}` : ''}`);
+      this.logger.log(`GET /user/passes called with auth0_id: ${auth0Id}`);
 
       // The Auth0Guard ensures auth0_id is present in headers
-      // Fetch the passes by the auth0_id from the header
+      // Fetch the passes with subscription summary by the auth0_id from the header
       // This ensures users can only access their own passes
-      const passes = await this.passesService.findByAuth0Id(auth0Id, query);
+      const result = await this.passesService.findPassesWithSubscription(auth0Id);
 
       // Verify all passes belong to the requesting user (security check)
-      const unauthorizedPasses = passes.filter(pass => pass.user_id !== auth0Id);
+      const allPasses = [...result.active_passes, ...result.pass_history];
+      const unauthorizedPasses = allPasses.filter(pass => pass.user_id !== auth0Id);
       if (unauthorizedPasses.length > 0) {
         this.logger.warn(
           `Found ${unauthorizedPasses.length} pass(es) that don't match auth0_id: ${auth0Id}`,
         );
         // Filter out any unauthorized passes as an extra security measure
-        return passes.filter(pass => pass.user_id === auth0Id);
+        return {
+          subscription: result.subscription,
+          active_passes: result.active_passes.filter(pass => pass.user_id === auth0Id),
+          pass_history: result.pass_history.filter(pass => pass.user_id === auth0Id),
+        };
       }
 
-      return passes;
+      return result;
     } catch (error) {
       this.logger.error(`Error in getPasses: ${error.message}`, error.stack);
       throw error;

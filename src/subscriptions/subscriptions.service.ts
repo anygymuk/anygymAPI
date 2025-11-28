@@ -53,6 +53,8 @@ export class SubscriptionsService {
           'subscription.price',
           'subscription.startDate',
           'subscription.nextBillingDate',
+          'subscription.currentPeriodStart',
+          'subscription.currentPeriodEnd',
           'subscription.status',
           'subscription.stripeSubscriptionId',
           'subscription.stripeCustomerId',
@@ -91,6 +93,18 @@ export class SubscriptionsService {
         return null;
       };
 
+      // Format timestamps (for current_period_start and current_period_end)
+      const formatTimestamp = (date: Date | null): string | null => {
+        if (!date) return null;
+        if (date instanceof Date) {
+          return date.toISOString();
+        }
+        if (typeof date === 'string') {
+          return new Date(date).toISOString();
+        }
+        return null;
+      };
+
       const response = {
         id: subscription.id,
         user_id: subscription.userId,
@@ -100,6 +114,8 @@ export class SubscriptionsService {
         price: parseFloat(subscription.price.toString()),
         start_date: formatDate(subscription.startDate) || '',
         next_billing_date: formatDate(subscription.nextBillingDate),
+        current_period_start: formatTimestamp(subscription.currentPeriodStart),
+        current_period_end: formatTimestamp(subscription.currentPeriodEnd),
         status: subscription.status,
         stripe_subscription_id: subscription.stripeSubscriptionId || null,
         stripe_customer_id: subscription.stripeCustomerId || null,

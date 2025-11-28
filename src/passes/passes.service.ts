@@ -5,6 +5,7 @@ import { GymPass } from './entities/gym-pass.entity';
 import { PassResponseDto } from './dto/pass-response.dto';
 import { GetPassesDto } from './dto/get-passes.dto';
 import { GeneratePassDto } from './dto/generate-pass.dto';
+import { PassesWithSubscriptionResponseDto, SubscriptionSummaryDto } from './dto/passes-with-subscription-response.dto';
 import { Gym } from '../gyms/entities/gym.entity';
 import { PassPricing } from './entities/pass-pricing.entity';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
@@ -251,6 +252,60 @@ export class PassesService {
         throw error;
       }
       throw new Error(`Failed to generate pass: ${error.message}`);
+    }
+  }
+
+  async findPassesWithSubscription(auth0Id: string): Promise<PassesWithSubscriptionResponseDto> {
+    try {
+      this.logger.log(`Looking up passes with subscription for auth0_id: ${auth0Id}`);
+
+      // Fetch all passes for the user
+      const allPasses = await this.findByAuth0Id(auth0Id);
+
+      // Separate passes into active and history
+      const activePasses = allPasses.filter(pass => pass.status === 'active');
+      const passHistory = allPasses.filter(pass => pass.status !== 'active');
+
+      // Fetch active subscription
+      let subscriptionSummary: SubscriptionSummaryDto | null = null;
+      try {
+        const subscription = await this.subscriptionsService.findByAuth0Id(auth0Id, { status: 'active' });
+        
+        subscriptionSummary = {
+          tier: subscription.tier,
+          monthly_limit: subscription.monthly_limit,
+          visits_used: subscription.visits_used,
+          price: subscription.price,
+          next_billing_date: subscription.next_billing_date,
+          guest_passes_limit: subscription.guest_passes_limit,
+          guest_passes_used: subscription.guest_passes_used,
+          current_period_start: subscription.current_period_start || null,
+          current_period_end: subscription.current_period_end || null,
+        };
+      } catch (error) {
+        if (error instanceof NotFoundException) {
+          this.logger.log(`No active subscription found for user: ${auth0Id}`);
+          // subscriptionSummary remains null
+        } else {
+          this.logger.error(
+            `Error fetching subscription for user ${auth0Id}: ${error.message}`,
+            error.stack,
+          );
+          // Continue without subscription data
+        }
+      }
+
+      return {
+        subscription: subscriptionSummary,
+        active_passes: activePasses,
+        pass_history: passHistory,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error in findPassesWithSubscription: ${error.message}`,
+        error.stack,
+      );
+      throw new Error(`Failed to fetch passes with subscription: ${error.message}`);
     }
   }
 }
