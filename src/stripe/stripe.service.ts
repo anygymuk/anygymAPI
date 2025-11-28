@@ -149,7 +149,15 @@ export class StripeService {
       const subscriptionId = session.subscription as string;
       let subscription: Stripe.Subscription | null = null;
       if (subscriptionId) {
-        subscription = await this.stripe.subscriptions.retrieve(subscriptionId);
+        try {
+          subscription = await this.stripe.subscriptions.retrieve(subscriptionId);
+          this.logger.log(`Retrieved subscription ${subscriptionId} from Stripe`);
+        } catch (error) {
+          this.logger.error(
+            `Failed to retrieve subscription ${subscriptionId}: ${error.message}`,
+          );
+          // Continue without subscription data - will use defaults
+        }
       }
 
       // Determine subscription limits based on tier
@@ -161,13 +169,39 @@ export class StripeService {
 
       const limits = tierLimits[tier.toLowerCase()] || tierLimits.standard;
 
-      // Step 6: Create new subscription record
-      const startDate = subscription?.current_period_start
-        ? new Date(subscription.current_period_start * 1000)
+      // Step 6: Extract current_period_start and current_period_end from subscription
+      // Check both direct subscription properties and items.data[0] as fallback
+      let periodStart: number | undefined = subscription?.current_period_start;
+      let periodEnd: number | undefined = subscription?.current_period_end;
+      
+      // Fallback: check items.data[0] if period info is not directly on subscription
+      if ((!periodStart || !periodEnd) && subscription?.items?.data?.[0]) {
+        if (!periodStart) {
+          periodStart = (subscription.items.data[0] as any).current_period_start;
+        }
+        if (!periodEnd) {
+          periodEnd = (subscription.items.data[0] as any).current_period_end;
+        }
+      }
+
+      // Create new subscription record with period dates
+      const startDate = periodStart
+        ? new Date(periodStart * 1000)
         : new Date();
-      const nextBillingDate = subscription?.current_period_end
-        ? new Date(subscription.current_period_end * 1000)
+      const nextBillingDate = periodEnd
+        ? new Date(periodEnd * 1000)
         : null;
+
+      // Log the period dates being recorded
+      if (periodStart && periodEnd) {
+        this.logger.log(
+          `Recording period dates - start: ${startDate.toISOString()}, end: ${nextBillingDate?.toISOString()}`,
+        );
+      } else {
+        this.logger.warn(
+          `Period dates not available in subscription - using defaults. startDate: ${startDate.toISOString()}`,
+        );
+      }
 
       const newSubscription = this.subscriptionRepository.create({
         userId: auth0Id,
