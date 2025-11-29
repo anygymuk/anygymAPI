@@ -230,7 +230,7 @@ export class PassesService {
       const passCode = `PASS-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
       // Step 6: Create pass record
-      const now = new Date();
+      // Reuse the 'now' variable declared earlier for consistency
       const validUntil = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours from now
       const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(passCode)}`;
 
