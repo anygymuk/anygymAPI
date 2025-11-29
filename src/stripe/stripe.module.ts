@@ -12,6 +12,7 @@ import { SendGridService } from '../passes/services/sendgrid.service';
   imports: [TypeOrmModule.forFeature([User, Subscription, Gym])],
   controllers: [StripeController],
   providers: [StripeService, GeocodingService, SendGridService],
+  exports: [StripeService],
 })
 export class StripeModule {}
 

@@ -1,18 +1,28 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Subscription } from './entities/subscription.entity';
 import { SubscriptionResponseDto } from './dto/subscription-response.dto';
 import { GetSubscriptionDto } from './dto/get-subscription.dto';
+import Stripe from 'stripe';
 
 @Injectable()
 export class SubscriptionsService {
   private readonly logger = new Logger(SubscriptionsService.name);
+  private stripe: Stripe;
 
   constructor(
     @InjectRepository(Subscription)
     private subscriptionRepository: Repository<Subscription>,
-  ) {}
+  ) {
+    // Initialize Stripe instance for subscription cancellation
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (stripeKey) {
+      this.stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
+    } else {
+      this.logger.warn('STRIPE_SECRET_KEY not set in environment variables');
+    }
+  }
 
   /**
    * Removes null, undefined, and empty string values from an object
@@ -132,6 +142,74 @@ export class SubscriptionsService {
         throw error;
       }
       throw new Error(`Failed to fetch subscription: ${error.message}`);
+    }
+  }
+
+  async cancelSubscription(auth0Id: string): Promise<{ message: string }> {
+    try {
+      this.logger.log(`Cancelling subscription for auth0_id: ${auth0Id}`);
+
+      // Step 1: Find the user's active subscription
+      const subscription = await this.subscriptionRepository.findOne({
+        where: { userId: auth0Id, status: 'active' },
+      });
+
+      if (!subscription) {
+        throw new NotFoundException('No active subscription found for this user');
+      }
+
+      if (!subscription.stripeSubscriptionId) {
+        throw new BadRequestException('Subscription does not have a Stripe subscription ID');
+      }
+
+      // Step 2: Cancel the subscription in Stripe
+      try {
+        const canceledSubscription = await this.stripe.subscriptions.cancel(
+          subscription.stripeSubscriptionId,
+        );
+
+        this.logger.log(
+          `Stripe subscription canceled: ${canceledSubscription.id}, status: ${canceledSubscription.status}`,
+        );
+
+        // Step 3: Verify the status is 'canceled'
+        if (canceledSubscription.status !== 'canceled') {
+          throw new Error(
+            `Stripe returned status '${canceledSubscription.status}' instead of 'canceled'`,
+          );
+        }
+
+        // Step 4: Update the subscription record in the database
+        subscription.status = 'cancelled';
+        await this.subscriptionRepository.save(subscription);
+
+        this.logger.log(`Subscription ${subscription.id} marked as cancelled in database`);
+
+        return { message: 'Subscription cancelled successfully' };
+      } catch (stripeError) {
+        this.logger.error(
+          `Stripe error cancelling subscription: ${stripeError.message}`,
+          stripeError.stack,
+        );
+
+        // Re-throw Stripe errors as BadRequestException with the error message
+        throw new BadRequestException(
+          `Failed to cancel subscription in Stripe: ${stripeError.message}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(`Error in cancelSubscription: ${error.message}`, error.stack);
+
+      // Re-throw known exceptions as-is
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      // Wrap other errors
+      throw new Error(`Failed to cancel subscription: ${error.message}`);
     }
   }
 }

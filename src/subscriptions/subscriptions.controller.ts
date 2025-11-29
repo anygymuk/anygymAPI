@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Headers,
   Query,
   ForbiddenException,
@@ -45,6 +46,23 @@ export class SubscriptionsController {
       return subscription;
     } catch (error) {
       this.logger.error(`Error in getSubscription: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Post('cancel')
+  async cancelSubscription(
+    @Headers('auth0_id') auth0Id: string,
+  ): Promise<{ message: string }> {
+    try {
+      this.logger.log(`POST /user/subscription/cancel called with auth0_id: ${auth0Id}`);
+
+      // The Auth0Guard ensures auth0_id is present in headers
+      // Cancel the subscription for the user identified by auth0_id
+      // This ensures users can only cancel their own subscriptions
+      return await this.subscriptionsService.cancelSubscription(auth0Id);
+    } catch (error) {
+      this.logger.error(`Error in cancelSubscription: ${error.message}`, error.stack);
       throw error;
     }
   }
