@@ -130,52 +130,66 @@ export class UsersService {
   }): Promise<{ message: string }> {
     try {
       this.logger.log(`Updating user with auth0_id: ${auth0Id}`);
+      this.logger.log(`Update data received: ${JSON.stringify(updateData)}`);
 
-      // Build update object with only provided fields
+      // First, verify the user exists
+      const user = await this.userRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Build update object with all fields to update
       const updateObject: any = {};
-      
+      let hasUpdates = false;
+
       if (updateData.fullName !== undefined) {
         updateObject.fullName = updateData.fullName;
+        hasUpdates = true;
       }
       if (updateData.addressLine1 !== undefined) {
         updateObject.addressLine1 = updateData.addressLine1;
+        hasUpdates = true;
       }
       if (updateData.addressLine2 !== undefined) {
         updateObject.addressLine2 = updateData.addressLine2;
+        hasUpdates = true;
       }
       if (updateData.addressCity !== undefined) {
         updateObject.addressCity = updateData.addressCity;
+        hasUpdates = true;
       }
       if (updateData.addressPostcode !== undefined) {
         updateObject.addressPostcode = updateData.addressPostcode;
+        hasUpdates = true;
       }
       if (updateData.dateOfBirth !== undefined) {
         updateObject.dateOfBirth = updateData.dateOfBirth;
+        hasUpdates = true;
       }
       if (updateData.emergencyContactName !== undefined) {
         updateObject.emergencyContactName = updateData.emergencyContactName;
+        hasUpdates = true;
       }
       if (updateData.emergencyContactNumber !== undefined) {
         updateObject.emergencyContactNumber = updateData.emergencyContactNumber;
+        hasUpdates = true;
       }
       if (updateData.onboardingCompleted !== undefined) {
         updateObject.onboardingCompleted = updateData.onboardingCompleted;
+        hasUpdates = true;
       }
 
-      // Check if there's anything to update
-      if (Object.keys(updateObject).length === 0) {
+      if (!hasUpdates) {
         throw new Error('No fields provided for update');
       }
 
-      // Update the user
-      const result = await this.userRepository.update(
-        { auth0Id },
-        updateObject,
-      );
-
-      if (result.affected === 0) {
-        throw new Error('User not found or no changes made');
-      }
+      // Use the most reliable approach: load entity, update properties, and save
+      // This ensures TypeORM properly handles column name mapping
+      Object.assign(user, updateObject);
+      await this.userRepository.save(user);
 
       this.logger.log(`User updated successfully: ${auth0Id}`);
       return { message: 'User updated successfully' };
