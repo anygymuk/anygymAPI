@@ -179,10 +179,15 @@ export class PassesService {
         );
       }
 
-      // Step 1.6: Check if user already has an active pass
-      const existingActivePass = await this.gymPassRepository.findOne({
-        where: { userId: auth0Id, status: 'active' },
-      });
+      // Step 1.6: Check if user already has an active pass (valid_until > current date/time)
+      const now = new Date();
+      const existingActivePass = await this.gymPassRepository
+        .createQueryBuilder('pass')
+        .where('pass.userId = :auth0Id', { auth0Id })
+        .andWhere('pass.validUntil IS NOT NULL')
+        .andWhere('pass.validUntil > :now', { now })
+        .orderBy('pass.createdAt', 'DESC')
+        .getOne();
 
       if (existingActivePass) {
         throw new BadRequestException(
@@ -304,9 +309,22 @@ export class PassesService {
       // Fetch all passes for the user
       const allPasses = await this.findByAuth0Id(auth0Id);
 
-      // Separate passes into active and history
-      const activePasses = allPasses.filter(pass => pass.status === 'active');
-      const passHistory = allPasses.filter(pass => pass.status !== 'active');
+      // Get current date/time for comparison
+      const now = new Date();
+
+      // Separate passes into active and history based on valid_until date
+      // Active: valid_until > current date/time
+      // Expired: valid_until <= current date/time or valid_until is null
+      const activePasses = allPasses.filter(pass => {
+        if (!pass.valid_until) return false;
+        const validUntilDate = new Date(pass.valid_until);
+        return validUntilDate > now;
+      });
+      const passHistory = allPasses.filter(pass => {
+        if (!pass.valid_until) return true; // Consider passes without valid_until as expired
+        const validUntilDate = new Date(pass.valid_until);
+        return validUntilDate <= now;
+      });
 
       // Fetch active subscription
       let subscriptionSummary: SubscriptionSummaryDto | null = null;

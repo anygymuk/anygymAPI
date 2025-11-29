@@ -203,6 +203,9 @@ export class UsersService {
     try {
       this.logger.log(`Looking up active pass for auth0_id: ${auth0Id}`);
 
+      // Get current date/time for comparison
+      const now = new Date();
+
       // Build query with joins to gyms and gym_chains
       const queryBuilder = this.gymPassRepository
         .createQueryBuilder('pass')
@@ -226,7 +229,8 @@ export class UsersService {
           'pass.subscriptionTier',
         ])
         .where('pass.userId = :auth0Id', { auth0Id })
-        .andWhere('pass.status = :status', { status: 'active' })
+        .andWhere('pass.validUntil IS NOT NULL')
+        .andWhere('pass.validUntil > :now', { now })
         .orderBy('pass.createdAt', 'DESC')
         .limit(1);
 
