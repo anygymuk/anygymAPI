@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Gym } from './entities/gym.entity';
+import { Rating } from './entities/rating.entity';
 import { GetGymsDto } from './dto/get-gyms.dto';
 import { GymDetailResponseDto } from './dto/gym-detail-response.dto';
 
@@ -40,6 +41,8 @@ export class GymsService {
   constructor(
     @InjectRepository(Gym)
     private gymRepository: Repository<Gym>,
+    @InjectRepository(Rating)
+    private ratingRepository: Repository<Rating>,
   ) {}
 
   async findAll(filters: GetGymsDto) {
@@ -84,8 +87,36 @@ export class GymsService {
       const gyms = await queryBuilder.getMany();
       this.logger.log(`Found ${gyms.length} active gyms`);
 
+      // Get all gym IDs to fetch ratings in batch
+      const gymIds = gyms.map((gym) => gym.id);
+
+      // Calculate average rating and count for all gyms in one query
+      let ratingStats: any[] = [];
+      if (gymIds.length > 0) {
+        ratingStats = await this.ratingRepository
+          .createQueryBuilder('rating')
+          .select('rating.gymId', 'gymId')
+          .addSelect('AVG(rating.rating)', 'averageRating')
+          .addSelect('COUNT(rating.id)', 'ratingCount')
+          .where('rating.gymId IN (:...gymIds)', { gymIds })
+          .groupBy('rating.gymId')
+          .getRawMany();
+      }
+
+      // Create a map for quick lookup
+      const ratingMap = new Map<number, { averageRating: number | null; ratingCount: number }>();
+      ratingStats.forEach((stat) => {
+        const avgRating = stat.averageRating != null ? parseFloat(stat.averageRating) : null;
+        ratingMap.set(stat.gymId, {
+          averageRating: avgRating,
+          ratingCount: parseInt(stat.ratingCount, 10) || 0,
+        });
+      });
+
       // Transform the data to match the required format
       return gyms.map((gym) => {
+        const ratingData = ratingMap.get(gym.id) || { averageRating: null, ratingCount: 0 };
+        
         const response = {
           id: gym.id,
           name: gym.name,
@@ -102,6 +133,8 @@ export class GymsService {
           opening_hours: gym.openingHours || null,
           phone: gym.phone || null,
           image_url: gym.imageUrl || null,
+          rating: ratingData.averageRating,
+          rating_count: ratingData.ratingCount,
         };
         return this.removeEmptyValues(response);
       });
