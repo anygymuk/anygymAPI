@@ -115,9 +115,9 @@ export class GymsService {
 
       // Transform the data to match the required format
       return gyms.map((gym) => {
-        const ratingData = ratingMap.get(gym.id) || { averageRating: null, ratingCount: 0 };
+        const ratingData = ratingMap.get(gym.id);
         
-        const response = {
+        const response: any = {
           id: gym.id,
           name: gym.name,
           gym_chain_id: gym.gymChainId,
@@ -133,9 +133,14 @@ export class GymsService {
           opening_hours: gym.openingHours || null,
           phone: gym.phone || null,
           image_url: gym.imageUrl || null,
-          rating: ratingData.averageRating,
-          rating_count: ratingData.ratingCount,
         };
+
+        // Only include rating and rating_count if the gym has ratings
+        if (ratingData && ratingData.ratingCount > 0) {
+          response.rating = ratingData.averageRating;
+          response.rating_count = ratingData.ratingCount;
+        }
+
         return this.removeEmptyValues(response);
       });
     } catch (error) {

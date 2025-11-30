@@ -8,6 +8,7 @@ import { PassesModule } from './passes/passes.module';
 import { StripeModule } from './stripe/stripe.module';
 import { Gym } from './gyms/entities/gym.entity';
 import { GymChain } from './gyms/entities/gym-chain.entity';
+import { Rating } from './gyms/entities/rating.entity';
 import { User } from './users/entities/user.entity';
 import { Subscription } from './subscriptions/entities/subscription.entity';
 import { GymPass } from './passes/entities/gym-pass.entity';
@@ -31,7 +32,7 @@ import { PassPricing } from './passes/entities/pass-pricing.entity';
         return {
           type: 'postgres',
           url: databaseUrl,
-          entities: [Gym, GymChain, User, Subscription, GymPass, PassPricing],
+          entities: [Gym, GymChain, Rating, User, Subscription, GymPass, PassPricing],
           synchronize: false,
           ssl: {
             rejectUnauthorized: false,
