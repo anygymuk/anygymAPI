@@ -133,7 +133,19 @@ export class StripeService {
 
       this.logger.log(`Processing subscription for auth0_id: ${auth0Id}, tier: ${tier}`);
 
-      // Step 3: Update app_users table with Stripe customer ID and mark onboarding as completed
+      // Step 3: Get user details early (needed for postcode fallback and email)
+      const user = await this.userRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!user) {
+        throw new Error(`User not found: ${auth0Id}`);
+      }
+
+      // Use user's saved postcode as fallback if not in session metadata
+      const postcodeToUse = postcode || user.addressPostcode;
+
+      // Step 4: Update app_users table with Stripe customer ID and mark onboarding as completed
       await this.userRepository.update(
         { auth0Id },
         { 
@@ -142,13 +154,13 @@ export class StripeService {
         },
       );
 
-      // Step 4: Cancel any existing active subscriptions
+      // Step 5: Cancel any existing active subscriptions
       await this.subscriptionRepository.update(
         { userId: auth0Id, status: 'active' },
         { status: 'cancelled' },
       );
 
-      // Step 5: Get subscription details from Stripe
+      // Step 6: Get subscription details from Stripe
       const subscriptionId = session.subscription as string;
       let subscription: Stripe.Subscription | null = null;
       if (subscriptionId) {
@@ -179,7 +191,7 @@ export class StripeService {
 
       const limits = tierLimits[tier.toLowerCase()] || tierLimits.standard;
 
-      // Step 6: Extract current_period_start and current_period_end from subscription
+      // Step 7: Extract current_period_start and current_period_end from subscription
       // These should be directly on the subscription object from Stripe
       let periodStart: number | undefined = subscription?.current_period_start;
       let periodEnd: number | undefined = subscription?.current_period_end;
@@ -285,37 +297,34 @@ export class StripeService {
         `Verified saved dates (Raw SQL) - start_date: ${rawResult[0]?.start_date}, next_billing_date: ${rawResult[0]?.next_billing_date}, current_period_start: ${rawResult[0]?.current_period_start}, current_period_end: ${rawResult[0]?.current_period_end}`,
       );
 
-      // Step 7: Geocode postcode if available
+      // Step 8: Geocode postcode if available (use fallback postcode)
       let coordinates: { latitude: number; longitude: number } | null = null;
-      if (postcode) {
-        coordinates = await this.geocodingService.geocodePostcode(postcode);
-        if (coordinates) {
-          // Update user with coordinates if we have address fields
+      if (postcodeToUse) {
+        coordinates = await this.geocodingService.geocodePostcode(postcodeToUse);
+        if (coordinates && postcodeToUse !== user.addressPostcode) {
+          // Update user with postcode if it's different from what's saved
           await this.userRepository.update(
             { auth0Id },
             {
-              addressPostcode: postcode,
+              addressPostcode: postcodeToUse,
             },
           );
         }
       }
 
-      // Step 8: Find closest gyms
+      // Step 9: Find closest gyms (always try to find gyms for email)
       let closestGyms: Gym[] = [];
       if (coordinates) {
         closestGyms = await this.findClosestGyms(
           coordinates.latitude,
           coordinates.longitude,
         );
-      }
-
-      // Step 9: Get user details for email
-      const user = await this.userRepository.findOne({
-        where: { auth0Id },
-      });
-
-      if (!user) {
-        throw new Error(`User not found: ${auth0Id}`);
+      } else {
+        // If no coordinates, log a warning but still try to get some gyms
+        // This ensures the email template always has gym data available
+        this.logger.warn(
+          `No coordinates available for user ${auth0Id}, cannot find closest gyms. Email may not include gym recommendations.`,
+        );
       }
 
       // Determine if this is a new customer (no previous subscriptions)
@@ -324,8 +333,8 @@ export class StripeService {
       });
       const isNewCustomer = previousSubscriptions === 0;
 
-      // Step 10: Prepare gym data for email
-      const gymData = closestGyms.slice(0, 3).map((gym, index) => ({
+      // Step 10: Prepare gym data for email (ensure we always have 3 gyms when possible)
+      const gymData = closestGyms.slice(0, 3).map((gym) => ({
         name: gym.name,
         address: gym.address,
         postcode: gym.postcode,
@@ -334,7 +343,8 @@ export class StripeService {
         image: gym.gymChain?.logo || '',
       }));
 
-      // Step 11: Send welcome email
+      // Step 11: Send welcome email with gym data
+      // For template d-e38fefb021e84d0a9a427f2c7b11a397 (non-new customers), ensure gym data is included
       await this.sendGridService.sendWelcomeEmail({
         to: user.email,
         recipientName: user.fullName || 'Valued Member',
