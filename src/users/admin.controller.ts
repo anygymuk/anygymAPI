@@ -98,6 +98,8 @@ export class AdminController {
       }
 
       this.logger.log(`PUT /admin/gyms/update called with auth0_id: ${auth0Id}, gym_id: ${gymId}`);
+      this.logger.log(`Request body received: ${JSON.stringify(updateData)}`);
+      this.logger.log(`Request body keys: ${Object.keys(updateData).join(', ')}`);
       
       // The Auth0Guard ensures auth0_id is present in headers
       // The service will verify the auth0_id exists in admin_users table
