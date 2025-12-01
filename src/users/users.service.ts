@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { User } from './entities/user.entity';
 import { AdminUser } from './entities/admin-user.entity';
 import { GymPass } from '../passes/entities/gym-pass.entity';
@@ -19,6 +19,7 @@ export class UsersService {
     private adminUserRepository: Repository<AdminUser>,
     @InjectRepository(GymPass)
     private gymPassRepository: Repository<GymPass>,
+    private dataSource: DataSource,
   ) {}
 
   /**
@@ -48,13 +49,52 @@ export class UsersService {
     try {
       this.logger.log(`Looking up user with auth0_id: ${auth0Id}`);
       
-      // Find user by auth0_id using findOne which properly handles column mapping
-      const user = await this.userRepository.findOne({
+      // Try using findOne first (simplest approach)
+      let user = await this.userRepository.findOne({
         where: { auth0Id },
       });
 
+      // If not found, try query builder with entity property
       if (!user) {
-        this.logger.warn(`User not found with auth0_id: ${auth0Id}`);
+        this.logger.log(`findOne failed, trying query builder for auth0_id: ${auth0Id}`);
+        user = await this.userRepository
+          .createQueryBuilder('user')
+          .where('user.auth0Id = :auth0Id', { auth0Id })
+          .getOne();
+      }
+
+      // If still not found, try raw query to verify the data exists
+      if (!user) {
+        this.logger.log(`Query builder failed, trying raw query for auth0_id: ${auth0Id}`);
+        const rawUser = await this.dataSource.query(
+          `SELECT * FROM app_users WHERE auth0_id = $1`,
+          [auth0Id]
+        );
+        
+        if (rawUser && rawUser.length > 0) {
+          this.logger.warn(`User found via raw query but not via TypeORM. Raw result: ${JSON.stringify(rawUser[0])}`);
+          // If raw query finds it, there's a TypeORM mapping issue
+          // Try to manually construct the user object
+          const rawData = rawUser[0];
+          user = this.userRepository.create({
+            auth0Id: rawData.auth0_id,
+            email: rawData.email,
+            fullName: rawData.full_name,
+            onboardingCompleted: rawData.onboarding_completed,
+            addressLine1: rawData.address_line1,
+            addressLine2: rawData.address_line2,
+            addressCity: rawData.address_city,
+            addressPostcode: rawData.address_postcode,
+            dateOfBirth: rawData.date_of_birth ? new Date(rawData.date_of_birth) : null,
+            stripeCustomerId: rawData.stripe_customer_id,
+            emergencyContactName: rawData.emergency_contact_name,
+            emergencyContactNumber: rawData.emergency_contact_number,
+          });
+        }
+      }
+
+      if (!user) {
+        this.logger.warn(`User not found with auth0_id: ${auth0Id} after all query methods`);
         throw new NotFoundException('User not found');
       }
 
