@@ -10,6 +10,7 @@ import { UserResponseDto } from './dto/user-response.dto';
 import { PassResponseDto } from '../passes/dto/pass-response.dto';
 import { AdminGymResponseDto } from './dto/admin-gym-response.dto';
 import { AdminGymsPaginatedResponseDto } from './dto/admin-gyms-paginated-response.dto';
+import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -513,6 +514,93 @@ export class UsersService {
       }
       // For other errors, wrap in a more descriptive error
       throw new Error(`Failed to fetch admin gyms: ${error.message}`);
+    }
+  }
+
+  async findAdminGymById(auth0Id: string, gymId: number): Promise<AdminGymDetailResponseDto> {
+    try {
+      this.logger.log(`Looking up admin user gym by id with auth0_id: ${auth0Id}, gymId: ${gymId}`);
+      
+      // First, find the admin user to get their role and gym_chain_id or access_gyms
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
+
+      // Find the gym by ID
+      const gym = await this.gymRepository.findOne({
+        where: { id: gymId },
+      });
+
+      if (!gym) {
+        this.logger.warn(`Gym not found with id: ${gymId}`);
+        throw new NotFoundException('Gym not found');
+      }
+
+      // Check permissions based on role
+      if (adminUser.role === 'admin') {
+        // Admin must have matching gym_chain_id
+        if (adminUser.gymChainId !== gym.gymChainId) {
+          this.logger.warn(`Admin user ${auth0Id} attempted to access gym ${gymId} with mismatched gym_chain_id`);
+          throw new ForbiddenException('You do not have permission to access this gym');
+        }
+        this.logger.log(`Admin user ${auth0Id} has permission to access gym ${gymId}`);
+      } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+        // Gym admin/staff must have gym id in access_gyms array
+        if (!adminUser.accessGyms || !adminUser.accessGyms.includes(gymId)) {
+          this.logger.warn(`${adminUser.role} user ${auth0Id} attempted to access gym ${gymId} not in access_gyms`);
+          throw new ForbiddenException('You do not have permission to access this gym');
+        }
+        this.logger.log(`${adminUser.role} user ${auth0Id} has permission to access gym ${gymId}`);
+      } else {
+        this.logger.warn(`Unknown role: ${adminUser.role}`);
+        throw new ForbiddenException('Access denied: Invalid role');
+      }
+
+      // Format dates
+      const formatDate = (date: Date | null): string => {
+        if (!date) return '';
+        if (date instanceof Date) {
+          return date.toISOString();
+        }
+        if (typeof date === 'string') {
+          return new Date(date).toISOString();
+        }
+        return '';
+      };
+
+      // Transform to response DTO
+      return {
+        id: gym.id,
+        name: gym.name,
+        address: gym.address,
+        postcode: gym.postcode,
+        city: gym.city,
+        latitude: gym.latitude,
+        longitude: gym.longitude,
+        required_tier: gym.requiredTier,
+        amenities: gym.amenities || null,
+        opening_hours: gym.openingHours || null,
+        phone: gym.phone || null,
+        image_url: gym.imageUrl || null,
+        created_at: formatDate(gym.createdAt),
+        updated_at: formatDate(gym.updatedAt),
+        status: gym.status,
+      };
+    } catch (error) {
+      this.logger.error(`Error in findAdminGymById: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException and NotFoundException as-is
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      // For other errors, wrap in a more descriptive error
+      throw new Error(`Failed to fetch admin gym: ${error.message}`);
     }
   }
 }

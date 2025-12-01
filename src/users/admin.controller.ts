@@ -3,6 +3,7 @@ import {
   Get,
   Headers,
   Query,
+  Param,
   UseGuards,
   Logger,
   ParseIntPipe,
@@ -12,6 +13,7 @@ import { UsersService } from './users.service';
 import { Auth0Guard } from './guards/auth0.guard';
 import { AdminUserResponseDto } from './dto/admin-user-response.dto';
 import { AdminGymsPaginatedResponseDto } from './dto/admin-gyms-paginated-response.dto';
+import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -34,6 +36,26 @@ export class AdminController {
       return adminUser;
     } catch (error) {
       this.logger.error(`Error in getAdminUser: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Get('gyms/:id')
+  async getAdminGymById(
+    @Headers('auth0_id') auth0Id: string,
+    @Param('id', ParseIntPipe) gymId: number,
+  ): Promise<AdminGymDetailResponseDto> {
+    try {
+      this.logger.log(`GET /admin/gyms/${gymId} called with auth0_id: ${auth0Id}`);
+      
+      // The Auth0Guard ensures auth0_id is present in headers
+      // The service will verify the auth0_id exists in admin_users table
+      // check permissions based on role, and return the gym details
+      const gym = await this.usersService.findAdminGymById(auth0Id, gymId);
+
+      return gym;
+    } catch (error) {
+      this.logger.error(`Error in getAdminGymById: ${error.message}`, error.stack);
       throw error;
     }
   }
