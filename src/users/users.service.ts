@@ -725,34 +725,42 @@ export class UsersService {
       await this.gymRepository.save(gym);
 
       // Create event record
-      // Format the update request body for the event description
-      const updateFields = Object.keys(updateData)
-        .filter(key => updateData[key] !== undefined)
-        .map(key => {
-          const value = updateData[key];
-          // Format the value nicely
-          if (typeof value === 'object' && value !== null) {
-            return `${key}: ${JSON.stringify(value)}`;
-          }
-          return `${key}: ${value}`;
-        })
-        .join(', ');
-      
-      const adminName = adminUser.name || 'Unknown';
-      const adminEmail = adminUser.email || 'Unknown';
-      const eventDescription = `Gym ${gymId} updated by ${adminName}, ${adminEmail}. Update made ${updateFields}`;
+      try {
+        // Format the update request body for the event description
+        const updateFields = Object.keys(updateData)
+          .filter(key => updateData[key] !== undefined)
+          .map(key => {
+            const value = updateData[key];
+            // Format the value nicely
+            if (typeof value === 'object' && value !== null) {
+              return `${key}: ${JSON.stringify(value)}`;
+            }
+            return `${key}: ${value}`;
+          })
+          .join(', ');
+        
+        const adminName = adminUser.name || 'Unknown';
+        const adminEmail = adminUser.email || 'Unknown';
+        const eventDescription = `Gym ${gymId} updated by ${adminName}, ${adminEmail}. Update made ${updateFields}`;
 
-      const event = this.eventRepository.create({
-        adminUser: auth0Id,
-        gymId: gymId,
-        gymChainId: gym.gymChainId,
-        eventType: 'gym_update',
-        eventDescription: eventDescription,
-        createdAt: new Date(),
-      });
+        this.logger.log(`Creating event record for gym ${gymId}, gymChainId: ${gym.gymChainId}`);
 
-      await this.eventRepository.save(event);
-      this.logger.log(`Event record created for gym update: ${gymId}`);
+        const event = this.eventRepository.create({
+          adminUser: auth0Id,
+          gymId: gymId,
+          gymChainId: gym.gymChainId,
+          eventType: 'gym_update',
+          eventDescription: eventDescription,
+          createdAt: new Date(),
+        });
+
+        await this.eventRepository.save(event);
+        this.logger.log(`Event record created for gym update: ${gymId}`);
+      } catch (eventError) {
+        // Log the error but don't fail the request if event creation fails
+        this.logger.error(`Failed to create event record for gym update ${gymId}: ${eventError.message}`, eventError.stack);
+        // Continue - the gym update was successful, event logging failure shouldn't break the request
+      }
 
       this.logger.log(`Gym ${gymId} updated successfully by ${auth0Id}`);
       return { message: 'Gym updated successfully' };
