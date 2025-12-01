@@ -362,12 +362,13 @@ export class UsersService {
     }
   }
 
-  async findAdminGyms(auth0Id: string, page: number = 1): Promise<AdminGymsPaginatedResponseDto> {
+  async findAdminGyms(auth0Id: string, page: number = 1, search?: string): Promise<AdminGymsPaginatedResponseDto> {
     try {
-      this.logger.log(`Looking up admin user gyms with auth0_id: ${auth0Id}, page: ${page}`);
+      this.logger.log(`Looking up admin user gyms with auth0_id: ${auth0Id}, page: ${page}, search: ${search || 'none'}`);
       
       const pageSize = 20;
       const offset = (page - 1) * pageSize;
+      const isSearchMode = !!search;
 
       // First, find the admin user to get their role and gym_chain_id or access_gyms
       const adminUser = await this.adminUserRepository.findOne({
@@ -398,7 +399,7 @@ export class UsersService {
             results: [],
             pagination: {
               total_results: 0,
-              page: page,
+              page: isSearchMode ? 1 : page,
               result_set: '0 to 0',
             },
           };
@@ -415,7 +416,7 @@ export class UsersService {
             results: [],
             pagination: {
               total_results: 0,
-              page: page,
+              page: isSearchMode ? 1 : page,
               result_set: '0 to 0',
             },
           };
@@ -427,28 +428,63 @@ export class UsersService {
           results: [],
           pagination: {
             total_results: 0,
-            page: page,
+            page: isSearchMode ? 1 : page,
             result_set: '0 to 0',
           },
         };
+      }
+
+      // Apply search filter if search parameter is provided
+      if (isSearchMode) {
+        const searchPattern = `%${search}%`;
+        queryBuilder = queryBuilder.andWhere(
+          '(gym.name ILIKE :search OR gym.city ILIKE :search)',
+          { search: searchPattern }
+        );
+        this.logger.log(`Applying search filter: ${search}`);
       }
 
       // Get total count before pagination
       const totalResults = await queryBuilder.getCount();
       this.logger.log(`Total gyms found: ${totalResults}`);
 
-      // Apply pagination
-      const gyms = await queryBuilder
-        .skip(offset)
-        .take(pageSize)
-        .getMany();
+      // Apply pagination only if not in search mode
+      if (isSearchMode) {
+        // In search mode, return all results without pagination
+        const gyms = await queryBuilder.getMany();
+        this.logger.log(`Returning ${gyms.length} gyms from search (no pagination)`);
 
-      this.logger.log(`Returning ${gyms.length} gyms for page ${page}`);
+        // Transform to response DTO
+        const results = gyms.map((gym) => ({
+          id: gym.id,
+          name: gym.name,
+          address: gym.address,
+          postcode: gym.postcode,
+          city: gym.city,
+          required_tier: gym.requiredTier,
+        }));
 
-      // Calculate result_set string
-      const startResult = totalResults > 0 ? offset + 1 : 0;
-      const endResult = Math.min(offset + pageSize, totalResults);
-      const resultSet = `${startResult} to ${endResult}`;
+        return {
+          results,
+          pagination: {
+            total_results: totalResults,
+            page: 1,
+            result_set: totalResults > 0 ? `1 to ${totalResults}` : '0 to 0',
+          },
+        };
+      } else {
+        // Normal pagination mode
+        const gyms = await queryBuilder
+          .skip(offset)
+          .take(pageSize)
+          .getMany();
+
+        this.logger.log(`Returning ${gyms.length} gyms for page ${page}`);
+
+        // Calculate result_set string
+        const startResult = totalResults > 0 ? offset + 1 : 0;
+        const endResult = Math.min(offset + pageSize, totalResults);
+        const resultSet = `${startResult} to ${endResult}`;
 
       // Transform to response DTO
       const results = gyms.map((gym) => ({

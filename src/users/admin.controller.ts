@@ -42,14 +42,16 @@ export class AdminController {
   async getAdminGyms(
     @Headers('auth0_id') auth0Id: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('search') search?: string,
   ): Promise<AdminGymsPaginatedResponseDto> {
     try {
-      this.logger.log(`GET /admin/gyms called with auth0_id: ${auth0Id}, page: ${page}`);
+      this.logger.log(`GET /admin/gyms called with auth0_id: ${auth0Id}, page: ${page}, search: ${search || 'none'}`);
       
       // The Auth0Guard ensures auth0_id is present in headers
       // The service will verify the auth0_id exists in admin_users table
       // and return paginated gyms based on the user's role
-      const result = await this.usersService.findAdminGyms(auth0Id, page);
+      // If search is provided, pagination is ignored and all matching results are returned
+      const result = await this.usersService.findAdminGyms(auth0Id, page, search);
 
       return result;
     } catch (error) {
