@@ -5,6 +5,7 @@ import { User } from './entities/user.entity';
 import { AdminUser } from './entities/admin-user.entity';
 import { GymPass } from '../passes/entities/gym-pass.entity';
 import { Gym } from '../gyms/entities/gym.entity';
+import { GymChain } from '../gyms/entities/gym-chain.entity';
 import { UserResponseDto } from './dto/user-response.dto';
 import { PassResponseDto } from '../passes/dto/pass-response.dto';
 
@@ -315,10 +316,12 @@ export class UsersService {
     try {
       this.logger.log(`Looking up admin user with auth0_id: ${auth0Id}`);
       
-      // Find the admin user in admin_users table
-      const adminUser = await this.adminUserRepository.findOne({
-        where: { auth0Id },
-      });
+      // Find the admin user in admin_users table with gym chain join
+      const adminUser = await this.adminUserRepository
+        .createQueryBuilder('adminUser')
+        .leftJoinAndSelect('adminUser.gymChain', 'gymChain')
+        .where('adminUser.auth0Id = :auth0Id', { auth0Id })
+        .getOne();
 
       if (!adminUser) {
         this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
@@ -327,9 +330,22 @@ export class UsersService {
 
       this.logger.log(`Admin user found: ${auth0Id}`);
 
+      // Build gym_chain object if it exists
+      let gymChain = null;
+      if (adminUser.gymChain) {
+        gymChain = {
+          name: adminUser.gymChain.name || null,
+          logo_url: adminUser.gymChain.logo || null,
+          brand_color: adminUser.gymChain.brandColor || null,
+        };
+      }
+
       // Return the admin user data
       return {
         auth0_id: adminUser.auth0Id,
+        name: adminUser.name || null,
+        email: adminUser.email || null,
+        gym_chain: gymChain,
       };
     } catch (error) {
       this.logger.error(`Error in findAdminUserByAuth0Id: ${error.message}`, error.stack);
