@@ -9,6 +9,7 @@ import { GymChain } from '../gyms/entities/gym-chain.entity';
 import { UserResponseDto } from './dto/user-response.dto';
 import { PassResponseDto } from '../passes/dto/pass-response.dto';
 import { AdminGymResponseDto } from './dto/admin-gym-response.dto';
+import { AdminGymsPaginatedResponseDto } from './dto/admin-gyms-paginated-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -361,10 +362,13 @@ export class UsersService {
     }
   }
 
-  async findAdminGyms(auth0Id: string): Promise<AdminGymResponseDto[]> {
+  async findAdminGyms(auth0Id: string, page: number = 1): Promise<AdminGymsPaginatedResponseDto> {
     try {
-      this.logger.log(`Looking up admin user gyms with auth0_id: ${auth0Id}`);
+      this.logger.log(`Looking up admin user gyms with auth0_id: ${auth0Id}, page: ${page}`);
       
+      const pageSize = 20;
+      const offset = (page - 1) * pageSize;
+
       // First, find the admin user to get their role and gym_chain_id or access_gyms
       const adminUser = await this.adminUserRepository.findOne({
         where: { auth0Id },
@@ -377,42 +381,77 @@ export class UsersService {
 
       this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
 
-      let gyms: Gym[] = [];
+      let queryBuilder = this.gymRepository
+        .createQueryBuilder('gym')
+        .select(['gym.id', 'gym.name', 'gym.address', 'gym.postcode', 'gym.city', 'gym.requiredTier']);
 
-      // Based on role, fetch different gyms
+      // Based on role, apply different filters
       if (adminUser.role === 'admin') {
         // Return all gyms where gym_chain_id matches the admin user's gym_chain_id
         if (adminUser.gymChainId) {
-          gyms = await this.gymRepository
-            .createQueryBuilder('gym')
-            .select(['gym.id', 'gym.name', 'gym.address', 'gym.postcode', 'gym.city', 'gym.requiredTier'])
-            .where('gym.gymChainId = :gymChainId', { gymChainId: adminUser.gymChainId })
-            .getMany();
-          this.logger.log(`Found ${gyms.length} gyms for admin with gym_chain_id: ${adminUser.gymChainId}`);
+          queryBuilder = queryBuilder.where('gym.gymChainId = :gymChainId', { gymChainId: adminUser.gymChainId });
+          this.logger.log(`Filtering gyms for admin with gym_chain_id: ${adminUser.gymChainId}`);
         } else {
           this.logger.warn(`Admin user has no gym_chain_id`);
-          gyms = [];
+          // Return empty result
+          return {
+            results: [],
+            pagination: {
+              total_results: 0,
+              page: page,
+              result_set: '0 to 0',
+            },
+          };
         }
       } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
         // Return all gyms where id exists in the user's access_gyms array
         if (adminUser.accessGyms && adminUser.accessGyms.length > 0) {
-          gyms = await this.gymRepository
-            .createQueryBuilder('gym')
-            .select(['gym.id', 'gym.name', 'gym.address', 'gym.postcode', 'gym.city', 'gym.requiredTier'])
-            .where('gym.id IN (:...gymIds)', { gymIds: adminUser.accessGyms })
-            .getMany();
-          this.logger.log(`Found ${gyms.length} gyms for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
+          queryBuilder = queryBuilder.where('gym.id IN (:...gymIds)', { gymIds: adminUser.accessGyms });
+          this.logger.log(`Filtering gyms for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
         } else {
           this.logger.warn(`${adminUser.role} user has no access_gyms`);
-          gyms = [];
+          // Return empty result
+          return {
+            results: [],
+            pagination: {
+              total_results: 0,
+              page: page,
+              result_set: '0 to 0',
+            },
+          };
         }
       } else {
         this.logger.warn(`Unknown role: ${adminUser.role}`);
-        gyms = [];
+        // Return empty result
+        return {
+          results: [],
+          pagination: {
+            total_results: 0,
+            page: page,
+            result_set: '0 to 0',
+          },
+        };
       }
 
+      // Get total count before pagination
+      const totalResults = await queryBuilder.getCount();
+      this.logger.log(`Total gyms found: ${totalResults}`);
+
+      // Apply pagination
+      const gyms = await queryBuilder
+        .skip(offset)
+        .take(pageSize)
+        .getMany();
+
+      this.logger.log(`Returning ${gyms.length} gyms for page ${page}`);
+
+      // Calculate result_set string
+      const startResult = totalResults > 0 ? offset + 1 : 0;
+      const endResult = Math.min(offset + pageSize, totalResults);
+      const resultSet = `${startResult} to ${endResult}`;
+
       // Transform to response DTO
-      return gyms.map((gym) => ({
+      const results = gyms.map((gym) => ({
         id: gym.id,
         name: gym.name,
         address: gym.address,
@@ -420,6 +459,15 @@ export class UsersService {
         city: gym.city,
         required_tier: gym.requiredTier,
       }));
+
+      return {
+        results,
+        pagination: {
+          total_results: totalResults,
+          page: page,
+          result_set: resultSet,
+        },
+      };
     } catch (error) {
       this.logger.error(`Error in findAdminGyms: ${error.message}`, error.stack);
       // Re-throw ForbiddenException as-is
