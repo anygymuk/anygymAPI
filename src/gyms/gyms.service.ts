@@ -137,7 +137,7 @@ export class GymsService {
 
         // Only include rating and rating_count if the gym has ratings
         if (ratingData && ratingData.ratingCount > 0) {
-          response.rating = ratingData.averageRating;
+          response.rating = Math.round((ratingData.averageRating || 0) * 10) / 10;
           response.rating_count = ratingData.ratingCount;
         }
 
@@ -165,6 +165,14 @@ export class GymsService {
       }
 
       this.logger.log(`Gym found: ${gym.name}`);
+
+      // Get rating statistics from ratings table
+      const ratingStats = await this.ratingRepository
+        .createQueryBuilder('rating')
+        .select('AVG(rating.rating)', 'averageRating')
+        .addSelect('COUNT(rating.id)', 'ratingCount')
+        .where('rating.gymId = :gymId', { gymId: id })
+        .getRawOne();
 
       // Format dates
       const formatDate = (date: Date | null): string => {
@@ -207,7 +215,7 @@ export class GymsService {
         gymChain = this.removeEmptyValues(gymChain) as GymDetailResponseDto['gym_chain'];
       }
 
-      const response = {
+      const response: any = {
         id: gym.id,
         name: gym.name,
         address: gym.address,
@@ -220,12 +228,19 @@ export class GymsService {
         opening_hours: gym.openingHours || null,
         phone: gym.phone || null,
         image_url: gym.imageUrl || null,
-        rating: gym.rating ? parseFloat(gym.rating.toString()) : null,
         created_at: formatDate(gym.createdAt),
         updated_at: formatDate(gym.updatedAt),
         status: gym.status,
         gym_chain: gymChain,
       };
+
+      // Only include rating and rating_count if the gym has ratings
+      const ratingCount = ratingStats ? parseInt(ratingStats.ratingCount, 10) || 0 : 0;
+      if (ratingCount > 0 && ratingStats.averageRating != null) {
+        const avgRating = parseFloat(ratingStats.averageRating);
+        response.rating = Math.round(avgRating * 10) / 10;
+        response.rating_count = ratingCount;
+      }
 
       return this.removeEmptyValues(response) as GymDetailResponseDto;
     } catch (error) {

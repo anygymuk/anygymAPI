@@ -24,7 +24,8 @@ export class GymDetailResponseDto {
   opening_hours: any;
   phone: string | null;
   image_url: string | null;
-  rating: number | null;
+  rating?: number | null;
+  rating_count?: number;
   created_at: string;
   updated_at: string;
   status: string;
