@@ -747,8 +747,8 @@ export class UsersService {
 
         const event = this.eventRepository.create({
           adminUser: auth0Id,
-          gymId: gymId,
-          gymChainId: gym.gymChainId,
+          gymId: gymId.toString(),
+          gymChainId: gym.gymChainId ? gym.gymChainId.toString() : null,
           eventType: 'gym_update',
           eventDescription: eventDescription,
           createdAt: new Date(),

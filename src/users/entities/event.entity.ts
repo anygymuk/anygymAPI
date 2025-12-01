@@ -5,14 +5,17 @@ export class Event {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'admin_user' })
+  @Column({ name: 'user_id', nullable: true })
+  userId: string;
+
+  @Column({ name: 'admin_user', nullable: true })
   adminUser: string;
 
-  @Column({ name: 'gym_id' })
-  gymId: number;
+  @Column({ name: 'gym_id', nullable: true })
+  gymId: string;
 
   @Column({ name: 'gym_chain_id', nullable: true })
-  gymChainId: number;
+  gymChainId: string;
 
   @Column({ name: 'event_type' })
   eventType: string;
@@ -20,7 +23,7 @@ export class Event {
   @Column({ name: 'event_description', type: 'text' })
   eventDescription: string;
 
-  @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ name: 'created_at', type: 'date' })
   createdAt: Date;
 }
 
