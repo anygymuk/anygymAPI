@@ -311,11 +311,11 @@ export class UsersService {
     }
   }
 
-  async findUserByAdminAuth0Id(auth0Id: string): Promise<UserResponseDto> {
+  async findAdminUserByAuth0Id(auth0Id: string) {
     try {
       this.logger.log(`Looking up admin user with auth0_id: ${auth0Id}`);
       
-      // First, verify the auth0_id exists in admin_users table
+      // Find the admin user in admin_users table
       const adminUser = await this.adminUserRepository.findOne({
         where: { auth0Id },
       });
@@ -325,14 +325,16 @@ export class UsersService {
         throw new ForbiddenException('Access denied: Admin privileges required');
       }
 
-      this.logger.log(`Admin user verified: ${auth0Id}`);
+      this.logger.log(`Admin user found: ${auth0Id}`);
 
-      // Now fetch the user from app_users table using the same auth0_id
-      return await this.findOneByAuth0Id(auth0Id);
+      // Return the admin user data
+      return {
+        auth0_id: adminUser.auth0Id,
+      };
     } catch (error) {
-      this.logger.error(`Error in findUserByAdminAuth0Id: ${error.message}`, error.stack);
-      // Re-throw ForbiddenException and NotFoundException as-is
-      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+      this.logger.error(`Error in findAdminUserByAuth0Id: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException as-is
+      if (error instanceof ForbiddenException) {
         throw error;
       }
       // For other errors, wrap in a more descriptive error

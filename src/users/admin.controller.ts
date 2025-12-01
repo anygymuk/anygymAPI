@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { Auth0Guard } from './guards/auth0.guard';
-import { UserResponseDto } from './dto/user-response.dto';
+import { AdminUserResponseDto } from './dto/admin-user-response.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -19,16 +19,15 @@ export class AdminController {
   @Get('user')
   async getAdminUser(
     @Headers('auth0_id') auth0Id: string,
-  ): Promise<UserResponseDto> {
+  ): Promise<AdminUserResponseDto> {
     try {
       this.logger.log(`GET /admin/user called with auth0_id: ${auth0Id}`);
       
       // The Auth0Guard ensures auth0_id is present in headers
-      // The service will verify the auth0_id exists in admin_users table
-      // and return the user from app_users table
-      const user = await this.usersService.findUserByAdminAuth0Id(auth0Id);
+      // The service will find and return the admin user from admin_users table
+      const adminUser = await this.usersService.findAdminUserByAuth0Id(auth0Id);
 
-      return user;
+      return adminUser;
     } catch (error) {
       this.logger.error(`Error in getAdminUser: ${error.message}`, error.stack);
       throw error;
