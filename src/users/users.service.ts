@@ -486,24 +486,25 @@ export class UsersService {
         const endResult = Math.min(offset + pageSize, totalResults);
         const resultSet = `${startResult} to ${endResult}`;
 
-      // Transform to response DTO
-      const results = gyms.map((gym) => ({
-        id: gym.id,
-        name: gym.name,
-        address: gym.address,
-        postcode: gym.postcode,
-        city: gym.city,
-        required_tier: gym.requiredTier,
-      }));
+        // Transform to response DTO
+        const results = gyms.map((gym) => ({
+          id: gym.id,
+          name: gym.name,
+          address: gym.address,
+          postcode: gym.postcode,
+          city: gym.city,
+          required_tier: gym.requiredTier,
+        }));
 
-      return {
-        results,
-        pagination: {
-          total_results: totalResults,
-          page: page,
-          result_set: resultSet,
-        },
-      };
+        return {
+          results,
+          pagination: {
+            total_results: totalResults,
+            page: page,
+            result_set: resultSet,
+          },
+        };
+      }
     } catch (error) {
       this.logger.error(`Error in findAdminGyms: ${error.message}`, error.stack);
       // Re-throw ForbiddenException as-is
