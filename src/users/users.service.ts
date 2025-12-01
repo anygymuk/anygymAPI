@@ -1,7 +1,8 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { AdminUser } from './entities/admin-user.entity';
 import { GymPass } from '../passes/entities/gym-pass.entity';
 import { Gym } from '../gyms/entities/gym.entity';
 import { UserResponseDto } from './dto/user-response.dto';
@@ -14,6 +15,8 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(AdminUser)
+    private adminUserRepository: Repository<AdminUser>,
     @InjectRepository(GymPass)
     private gymPassRepository: Repository<GymPass>,
   ) {}
@@ -280,6 +283,35 @@ export class UsersService {
         error.stack,
       );
       throw new Error(`Failed to fetch active pass: ${error.message}`);
+    }
+  }
+
+  async findUserByAdminAuth0Id(auth0Id: string): Promise<UserResponseDto> {
+    try {
+      this.logger.log(`Looking up admin user with auth0_id: ${auth0Id}`);
+      
+      // First, verify the auth0_id exists in admin_users table
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user verified: ${auth0Id}`);
+
+      // Now fetch the user from app_users table using the same auth0_id
+      return await this.findOneByAuth0Id(auth0Id);
+    } catch (error) {
+      this.logger.error(`Error in findUserByAdminAuth0Id: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException and NotFoundException as-is
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      // For other errors, wrap in a more descriptive error
+      throw new Error(`Failed to fetch admin user: ${error.message}`);
     }
   }
 }
