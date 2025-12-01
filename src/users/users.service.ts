@@ -48,25 +48,10 @@ export class UsersService {
     try {
       this.logger.log(`Looking up user with auth0_id: ${auth0Id}`);
       
-      // Find user by auth0_id - select only the columns we need
-      const user = await this.userRepository
-        .createQueryBuilder('user')
-        .select([
-          'user.auth0Id',
-          'user.email',
-          'user.fullName',
-          'user.onboardingCompleted',
-          'user.addressLine1',
-          'user.addressLine2',
-          'user.addressCity',
-          'user.addressPostcode',
-          'user.dateOfBirth',
-          'user.stripeCustomerId',
-          'user.emergencyContactName',
-          'user.emergencyContactNumber',
-        ])
-        .where('user.auth0Id = :auth0Id', { auth0Id })
-        .getOne();
+      // Find user by auth0_id using findOne which properly handles column mapping
+      const user = await this.userRepository.findOne({
+        where: { auth0Id },
+      });
 
       if (!user) {
         this.logger.warn(`User not found with auth0_id: ${auth0Id}`);
