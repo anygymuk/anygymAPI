@@ -8,6 +8,7 @@ import { Gym } from '../gyms/entities/gym.entity';
 import { GymChain } from '../gyms/entities/gym-chain.entity';
 import { UserResponseDto } from './dto/user-response.dto';
 import { PassResponseDto } from '../passes/dto/pass-response.dto';
+import { AdminGymResponseDto } from './dto/admin-gym-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -20,6 +21,8 @@ export class UsersService {
     private adminUserRepository: Repository<AdminUser>,
     @InjectRepository(GymPass)
     private gymPassRepository: Repository<GymPass>,
+    @InjectRepository(Gym)
+    private gymRepository: Repository<Gym>,
     private dataSource: DataSource,
   ) {}
 
@@ -355,6 +358,76 @@ export class UsersService {
       }
       // For other errors, wrap in a more descriptive error
       throw new Error(`Failed to fetch admin user: ${error.message}`);
+    }
+  }
+
+  async findAdminGyms(auth0Id: string): Promise<AdminGymResponseDto[]> {
+    try {
+      this.logger.log(`Looking up admin user gyms with auth0_id: ${auth0Id}`);
+      
+      // First, find the admin user to get their role and gym_chain_id or access_gyms
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
+
+      let gyms: Gym[] = [];
+
+      // Based on role, fetch different gyms
+      if (adminUser.role === 'admin') {
+        // Return all gyms where gym_chain_id matches the admin user's gym_chain_id
+        if (adminUser.gymChainId) {
+          gyms = await this.gymRepository
+            .createQueryBuilder('gym')
+            .select(['gym.id', 'gym.name', 'gym.address', 'gym.postcode', 'gym.city', 'gym.requiredTier'])
+            .where('gym.gymChainId = :gymChainId', { gymChainId: adminUser.gymChainId })
+            .getMany();
+          this.logger.log(`Found ${gyms.length} gyms for admin with gym_chain_id: ${adminUser.gymChainId}`);
+        } else {
+          this.logger.warn(`Admin user has no gym_chain_id`);
+          gyms = [];
+        }
+      } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+        // Return all gyms where id exists in the user's access_gyms array
+        if (adminUser.accessGyms && adminUser.accessGyms.length > 0) {
+          gyms = await this.gymRepository
+            .createQueryBuilder('gym')
+            .select(['gym.id', 'gym.name', 'gym.address', 'gym.postcode', 'gym.city', 'gym.requiredTier'])
+            .where('gym.id IN (:...gymIds)', { gymIds: adminUser.accessGyms })
+            .getMany();
+          this.logger.log(`Found ${gyms.length} gyms for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
+        } else {
+          this.logger.warn(`${adminUser.role} user has no access_gyms`);
+          gyms = [];
+        }
+      } else {
+        this.logger.warn(`Unknown role: ${adminUser.role}`);
+        gyms = [];
+      }
+
+      // Transform to response DTO
+      return gyms.map((gym) => ({
+        id: gym.id,
+        name: gym.name,
+        address: gym.address,
+        postcode: gym.postcode,
+        city: gym.city,
+        required_tier: gym.requiredTier,
+      }));
+    } catch (error) {
+      this.logger.error(`Error in findAdminGyms: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException as-is
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      // For other errors, wrap in a more descriptive error
+      throw new Error(`Failed to fetch admin gyms: ${error.message}`);
     }
   }
 }

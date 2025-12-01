@@ -18,5 +18,11 @@ export class AdminUser {
   @ManyToOne(() => GymChain)
   @JoinColumn({ name: 'gym_chain_id' })
   gymChain: GymChain;
+
+  @Column({ nullable: true })
+  role: string;
+
+  @Column({ name: 'access_gyms', type: 'jsonb', nullable: true })
+  accessGyms: number[];
 }
 
