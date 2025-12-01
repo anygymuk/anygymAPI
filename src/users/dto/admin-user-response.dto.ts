@@ -2,6 +2,8 @@ export class AdminUserResponseDto {
   auth0_id: string;
   name: string | null;
   email: string | null;
+  role: string | null;
+  permission: string | null;
   gym_chain: {
     name: string | null;
     logo_url: string | null;

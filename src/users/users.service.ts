@@ -354,6 +354,8 @@ export class UsersService {
         auth0_id: adminUser.auth0Id,
         name: adminUser.name || null,
         email: adminUser.email || null,
+        role: adminUser.role || null,
+        permission: adminUser.permission || null,
         gym_chain: gymChain,
       };
     } catch (error) {

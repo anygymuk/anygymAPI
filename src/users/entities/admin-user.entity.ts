@@ -24,5 +24,8 @@ export class AdminUser {
 
   @Column({ name: 'access_gyms', type: 'jsonb', nullable: true })
   accessGyms: number[];
+
+  @Column({ nullable: true })
+  permission: string;
 }
 
