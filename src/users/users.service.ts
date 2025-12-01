@@ -11,6 +11,7 @@ import { PassResponseDto } from '../passes/dto/pass-response.dto';
 import { AdminGymResponseDto } from './dto/admin-gym-response.dto';
 import { AdminGymsPaginatedResponseDto } from './dto/admin-gyms-paginated-response.dto';
 import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
+import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
 
 @Injectable()
 export class UsersService {
@@ -601,6 +602,136 @@ export class UsersService {
       }
       // For other errors, wrap in a more descriptive error
       throw new Error(`Failed to fetch admin gym: ${error.message}`);
+    }
+  }
+
+  async updateAdminGym(auth0Id: string, gymId: number, updateData: UpdateAdminGymDto): Promise<{ message: string }> {
+    try {
+      this.logger.log(`Updating admin gym with auth0_id: ${auth0Id}, gymId: ${gymId}`);
+      this.logger.log(`Update data: ${JSON.stringify(updateData)}`);
+      
+      // First, find the admin user to get their role and gym_chain_id or access_gyms
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      // Check if user role is admin, gym_admin, or gym_staff
+      if (adminUser.role !== 'admin' && adminUser.role !== 'gym_admin' && adminUser.role !== 'gym_staff') {
+        this.logger.warn(`User ${auth0Id} with role ${adminUser.role} attempted to update gym`);
+        throw new ForbiddenException('Access denied: Invalid role');
+      }
+
+      this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
+
+      // Find the gym by ID
+      const gym = await this.gymRepository.findOne({
+        where: { id: gymId },
+      });
+
+      if (!gym) {
+        this.logger.warn(`Gym not found with id: ${gymId}`);
+        throw new NotFoundException('Gym not found');
+      }
+
+      // Check write permissions based on role
+      if (adminUser.role === 'admin') {
+        // Admin must have matching gym_chain_id
+        if (adminUser.gymChainId !== gym.gymChainId) {
+          this.logger.warn(`Admin user ${auth0Id} attempted to update gym ${gymId} with mismatched gym_chain_id`);
+          throw new ForbiddenException('You do not have permission to update this gym');
+        }
+        this.logger.log(`Admin user ${auth0Id} has permission to update gym ${gymId}`);
+      } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+        // Gym admin/staff must have gym id in access_gyms array
+        if (!adminUser.accessGyms || !adminUser.accessGyms.includes(gymId)) {
+          this.logger.warn(`${adminUser.role} user ${auth0Id} attempted to update gym ${gymId} not in access_gyms`);
+          throw new ForbiddenException('You do not have permission to update this gym');
+        }
+        this.logger.log(`${adminUser.role} user ${auth0Id} has permission to update gym ${gymId}`);
+      }
+
+      // Build update object with only provided fields
+      const updateObject: any = {};
+      let hasUpdates = false;
+
+      if (updateData.name !== undefined) {
+        updateObject.name = updateData.name;
+        hasUpdates = true;
+      }
+      if (updateData.address !== undefined) {
+        updateObject.address = updateData.address;
+        hasUpdates = true;
+      }
+      if (updateData.postcode !== undefined) {
+        updateObject.postcode = updateData.postcode;
+        hasUpdates = true;
+      }
+      if (updateData.city !== undefined) {
+        updateObject.city = updateData.city;
+        hasUpdates = true;
+      }
+      if (updateData.latitude !== undefined) {
+        updateObject.latitude = updateData.latitude;
+        hasUpdates = true;
+      }
+      if (updateData.longitude !== undefined) {
+        updateObject.longitude = updateData.longitude;
+        hasUpdates = true;
+      }
+      if (updateData.required_tier !== undefined) {
+        updateObject.requiredTier = updateData.required_tier;
+        hasUpdates = true;
+      }
+      if (updateData.amenities !== undefined) {
+        updateObject.amenities = updateData.amenities;
+        hasUpdates = true;
+      }
+      if (updateData.opening_hours !== undefined) {
+        updateObject.openingHours = updateData.opening_hours;
+        hasUpdates = true;
+      }
+      if (updateData.phone !== undefined) {
+        updateObject.phone = updateData.phone;
+        hasUpdates = true;
+      }
+      if (updateData.image_url !== undefined) {
+        updateObject.imageUrl = updateData.image_url;
+        hasUpdates = true;
+      }
+      if (updateData.status !== undefined) {
+        updateObject.status = updateData.status;
+        hasUpdates = true;
+      }
+
+      if (!hasUpdates) {
+        throw new Error('No fields provided for update');
+      }
+
+      // Always update the updated_at timestamp
+      updateObject.updatedAt = new Date();
+
+      // Update the gym
+      Object.assign(gym, updateObject);
+      await this.gymRepository.save(gym);
+
+      this.logger.log(`Gym ${gymId} updated successfully by ${auth0Id}`);
+      return { message: 'Gym updated successfully' };
+    } catch (error) {
+      this.logger.error(`Error in updateAdminGym: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException and NotFoundException as-is
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      // For other errors, wrap in a more descriptive error
+      if (error.message === 'No fields provided for update') {
+        throw new Error('No fields provided for update');
+      }
+      throw new Error(`Failed to update admin gym: ${error.message}`);
     }
   }
 }

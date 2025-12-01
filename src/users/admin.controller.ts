@@ -1,7 +1,9 @@
 import {
   Controller,
   Get,
+  Put,
   Headers,
+  Body,
   Query,
   Param,
   UseGuards,
@@ -14,6 +16,7 @@ import { Auth0Guard } from './guards/auth0.guard';
 import { AdminUserResponseDto } from './dto/admin-user-response.dto';
 import { AdminGymsPaginatedResponseDto } from './dto/admin-gyms-paginated-response.dto';
 import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
+import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -78,6 +81,32 @@ export class AdminController {
       return result;
     } catch (error) {
       this.logger.error(`Error in getAdminGyms: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Put('gyms/update')
+  async updateAdminGym(
+    @Headers('auth0_id') auth0Id: string,
+    @Headers('gym_id') gymIdHeader: string,
+    @Body() updateData: UpdateAdminGymDto,
+  ): Promise<{ message: string }> {
+    try {
+      const gymId = parseInt(gymIdHeader, 10);
+      if (isNaN(gymId)) {
+        throw new Error('Invalid gym_id in header');
+      }
+
+      this.logger.log(`PUT /admin/gyms/update called with auth0_id: ${auth0Id}, gym_id: ${gymId}`);
+      
+      // The Auth0Guard ensures auth0_id is present in headers
+      // The service will verify the auth0_id exists in admin_users table
+      // check permissions based on role, and update the gym
+      const result = await this.usersService.updateAdminGym(auth0Id, gymId, updateData);
+
+      return result;
+    } catch (error) {
+      this.logger.error(`Error in updateAdminGym: ${error.message}`, error.stack);
       throw error;
     }
   }
