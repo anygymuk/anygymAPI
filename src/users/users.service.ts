@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { User } from './entities/user.entity';
 import { AdminUser } from './entities/admin-user.entity';
+import { Event } from './entities/event.entity';
 import { GymPass } from '../passes/entities/gym-pass.entity';
 import { Gym } from '../gyms/entities/gym.entity';
 import { GymChain } from '../gyms/entities/gym-chain.entity';
@@ -22,6 +23,8 @@ export class UsersService {
     private userRepository: Repository<User>,
     @InjectRepository(AdminUser)
     private adminUserRepository: Repository<AdminUser>,
+    @InjectRepository(Event)
+    private eventRepository: Repository<Event>,
     @InjectRepository(GymPass)
     private gymPassRepository: Repository<GymPass>,
     @InjectRepository(Gym)
@@ -718,6 +721,36 @@ export class UsersService {
       // Update the gym
       Object.assign(gym, updateObject);
       await this.gymRepository.save(gym);
+
+      // Create event record
+      // Format the update request body for the event description
+      const updateFields = Object.keys(updateData)
+        .filter(key => updateData[key] !== undefined)
+        .map(key => {
+          const value = updateData[key];
+          // Format the value nicely
+          if (typeof value === 'object' && value !== null) {
+            return `${key}: ${JSON.stringify(value)}`;
+          }
+          return `${key}: ${value}`;
+        })
+        .join(', ');
+      
+      const adminName = adminUser.name || 'Unknown';
+      const adminEmail = adminUser.email || 'Unknown';
+      const eventDescription = `Gym ${gymId} updated by ${adminName}, ${adminEmail}. Update made ${updateFields}`;
+
+      const event = this.eventRepository.create({
+        adminUser: auth0Id,
+        gymId: gymId,
+        gymChainId: gym.gymChainId,
+        eventType: 'gym_update',
+        eventDescription: eventDescription,
+        createdAt: new Date(),
+      });
+
+      await this.eventRepository.save(event);
+      this.logger.log(`Event record created for gym update: ${gymId}`);
 
       this.logger.log(`Gym ${gymId} updated successfully by ${auth0Id}`);
       return { message: 'Gym updated successfully' };

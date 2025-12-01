@@ -11,6 +11,7 @@ import { GymChain } from './gyms/entities/gym-chain.entity';
 import { Rating } from './gyms/entities/rating.entity';
 import { User } from './users/entities/user.entity';
 import { AdminUser } from './users/entities/admin-user.entity';
+import { Event } from './users/entities/event.entity';
 import { Subscription } from './subscriptions/entities/subscription.entity';
 import { GymPass } from './passes/entities/gym-pass.entity';
 import { PassPricing } from './passes/entities/pass-pricing.entity';
@@ -33,7 +34,7 @@ import { PassPricing } from './passes/entities/pass-pricing.entity';
         return {
           type: 'postgres',
           url: databaseUrl,
-          entities: [Gym, GymChain, Rating, User, AdminUser, Subscription, GymPass, PassPricing],
+          entities: [Gym, GymChain, Rating, User, AdminUser, Event, Subscription, GymPass, PassPricing],
           synchronize: false,
           ssl: {
             rejectUnauthorized: false,
