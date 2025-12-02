@@ -13,6 +13,7 @@ import { AdminGymResponseDto } from './dto/admin-gym-response.dto';
 import { AdminGymsPaginatedResponseDto } from './dto/admin-gyms-paginated-response.dto';
 import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
 import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
+import { EventResponseDto } from './dto/event-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -775,6 +776,86 @@ export class UsersService {
         throw new Error('No fields provided for update');
       }
       throw new Error(`Failed to update admin gym: ${error.message}`);
+    }
+  }
+
+  async findAdminEvents(auth0Id: string): Promise<EventResponseDto[]> {
+    try {
+      this.logger.log(`Looking up admin events with auth0_id: ${auth0Id}`);
+      
+      // First, find the admin user to get their role and gym_chain_id or access_gyms
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
+
+      let queryBuilder = this.eventRepository.createQueryBuilder('event');
+
+      // Based on role, apply different filters
+      if (adminUser.role === 'admin') {
+        // Return all events where gym_chain_id matches the admin user's gym_chain_id
+        if (adminUser.gymChainId) {
+          // Convert number to string for comparison since events.gym_chain_id is VARCHAR
+          queryBuilder = queryBuilder.where('event.gymChainId = :gymChainId', { 
+            gymChainId: adminUser.gymChainId.toString() 
+          });
+          this.logger.log(`Filtering events for admin with gym_chain_id: ${adminUser.gymChainId}`);
+        } else {
+          this.logger.warn(`Admin user has no gym_chain_id`);
+          // Return empty result
+          return [];
+        }
+      } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+        // Return all events where gym_id matches one of the user's gym_ids from access_gyms array
+        if (adminUser.accessGyms && adminUser.accessGyms.length > 0) {
+          // Convert number array to string array for comparison since events.gym_id is VARCHAR
+          const gymIdsAsStrings = adminUser.accessGyms.map(id => id.toString());
+          queryBuilder = queryBuilder.where('event.gymId IN (:...gymIds)', { 
+            gymIds: gymIdsAsStrings 
+          });
+          this.logger.log(`Filtering events for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
+        } else {
+          this.logger.warn(`${adminUser.role} user has no access_gyms`);
+          // Return empty result
+          return [];
+        }
+      } else {
+        this.logger.warn(`Unknown role: ${adminUser.role}`);
+        // Return empty result
+        return [];
+      }
+
+      // Get all matching events
+      const events = await queryBuilder.getMany();
+      this.logger.log(`Found ${events.length} events`);
+
+      // Transform to response DTO
+      const results = events.map((event) => ({
+        id: event.id,
+        user_id: event.userId,
+        admin_user: event.adminUser,
+        gym_id: event.gymId,
+        gym_chain_id: event.gymChainId,
+        event_type: event.eventType,
+        event_description: event.eventDescription,
+        created_at: event.createdAt,
+      }));
+
+      return results;
+    } catch (error) {
+      this.logger.error(`Error in findAdminEvents: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException as-is
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      // For other errors, wrap in a more descriptive error
+      throw new Error(`Failed to fetch admin events: ${error.message}`);
     }
   }
 }

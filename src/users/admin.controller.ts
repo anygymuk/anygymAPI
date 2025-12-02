@@ -17,6 +17,7 @@ import { AdminUserResponseDto } from './dto/admin-user-response.dto';
 import { AdminGymsPaginatedResponseDto } from './dto/admin-gyms-paginated-response.dto';
 import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
 import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
+import { EventResponseDto } from './dto/event-response.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -109,6 +110,25 @@ export class AdminController {
       return result;
     } catch (error) {
       this.logger.error(`Error in updateAdminGym: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Get('events')
+  async getAdminEvents(
+    @Headers('auth0_id') auth0Id: string,
+  ): Promise<EventResponseDto[]> {
+    try {
+      this.logger.log(`GET /admin/events called with auth0_id: ${auth0Id}`);
+      
+      // The Auth0Guard ensures auth0_id is present in headers
+      // The service will verify the auth0_id exists in admin_users table
+      // and return events based on the user's role
+      const events = await this.usersService.findAdminEvents(auth0Id);
+
+      return events;
+    } catch (error) {
+      this.logger.error(`Error in getAdminEvents: ${error.message}`, error.stack);
       throw error;
     }
   }
