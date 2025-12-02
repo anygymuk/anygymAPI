@@ -15,6 +15,7 @@ import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
 import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { AdminMemberResponseDto } from './dto/admin-member-response.dto';
+import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -874,10 +875,14 @@ export class UsersService {
     }
   }
 
-  async findAdminMembers(auth0Id: string): Promise<AdminMemberResponseDto[]> {
+  async findAdminMembers(auth0Id: string, page: number = 1, search?: string): Promise<AdminMembersPaginatedResponseDto> {
     try {
-      this.logger.log(`Looking up admin members with auth0_id: ${auth0Id}`);
+      this.logger.log(`Looking up admin members with auth0_id: ${auth0Id}, page: ${page}, search: ${search || 'none'}`);
       
+      const pageSize = 20;
+      const offset = (page - 1) * pageSize;
+      const isSearchMode = !!search;
+
       // First, find the admin user to get their role and gym_chain_id or access_gyms
       const adminUser = await this.adminUserRepository.findOne({
         where: { auth0Id },
@@ -916,7 +921,14 @@ export class UsersService {
           this.logger.log(`Filtering members for admin with gym_chain_id: ${adminUser.gymChainId}`);
         } else {
           this.logger.warn(`Admin user has no gym_chain_id`);
-          return [];
+          return {
+            results: [],
+            pagination: {
+              total_results: 0,
+              page: isSearchMode ? 1 : page,
+              result_set: '0 to 0',
+            },
+          };
         }
       } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
         // Return all members who have generated passes for gyms in the access_gyms array
@@ -927,26 +939,91 @@ export class UsersService {
           this.logger.log(`Filtering members for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
         } else {
           this.logger.warn(`${adminUser.role} user has no access_gyms`);
-          return [];
+          return {
+            results: [],
+            pagination: {
+              total_results: 0,
+              page: isSearchMode ? 1 : page,
+              result_set: '0 to 0',
+            },
+          };
         }
       } else {
         this.logger.warn(`Unknown role: ${adminUser.role}`);
-        return [];
+        return {
+          results: [],
+          pagination: {
+            total_results: 0,
+            page: isSearchMode ? 1 : page,
+            result_set: '0 to 0',
+          },
+        };
       }
 
-      // Execute query and get raw results
-      const results = await queryBuilder.getRawMany();
-      this.logger.log(`Found ${results.length} members`);
+      // Apply search filter if search parameter is provided
+      if (isSearchMode) {
+        const searchPattern = `%${search}%`;
+        queryBuilder = queryBuilder.andWhere('user.email ILIKE :search', { search: searchPattern });
+        this.logger.log(`Applying search filter: ${search}`);
+      }
 
-      // Transform to response DTO
-      const members = results.map((row) => ({
-        member_email: row.member_email,
-        passes: parseInt(row.passes, 10),
-        last_visit: row.last_visit ? new Date(row.last_visit) : null,
-        has_active_pass: parseInt(row.has_active_pass, 10) === 1,
-      }));
+      // Get total count before pagination
+      // Since we're grouping by user.email, we need to count distinct users
+      // We'll execute the query first to get the count of distinct groups
+      const allResults = await queryBuilder.getRawMany();
+      const totalResults = allResults.length;
+      this.logger.log(`Total members found: ${totalResults}`);
 
-      return members;
+      // Apply pagination only if not in search mode
+      if (isSearchMode) {
+        // In search mode, return all results without pagination
+        this.logger.log(`Returning ${allResults.length} members from search (no pagination)`);
+
+        // Transform to response DTO
+        const members = allResults.map((row) => ({
+          member_email: row.member_email,
+          passes: parseInt(row.passes, 10),
+          last_visit: row.last_visit ? new Date(row.last_visit) : null,
+          has_active_pass: parseInt(row.has_active_pass, 10) === 1,
+        }));
+
+        return {
+          results: members,
+          pagination: {
+            total_results: totalResults,
+            page: 1,
+            result_set: totalResults > 0 ? `1 to ${totalResults}` : '0 to 0',
+          },
+        };
+      } else {
+        // Normal pagination mode - slice the already fetched results
+        const paginatedResults = allResults.slice(offset, offset + pageSize);
+        this.logger.log(`Returning ${paginatedResults.length} members for page ${page}`);
+
+        this.logger.log(`Returning ${results.length} members for page ${page}`);
+
+        // Calculate result_set string
+        const startResult = totalResults > 0 ? offset + 1 : 0;
+        const endResult = Math.min(offset + pageSize, totalResults);
+        const resultSet = `${startResult} to ${endResult}`;
+
+        // Transform to response DTO
+        const members = paginatedResults.map((row) => ({
+          member_email: row.member_email,
+          passes: parseInt(row.passes, 10),
+          last_visit: row.last_visit ? new Date(row.last_visit) : null,
+          has_active_pass: parseInt(row.has_active_pass, 10) === 1,
+        }));
+
+        return {
+          results: members,
+          pagination: {
+            total_results: totalResults,
+            page: page,
+            result_set: resultSet,
+          },
+        };
+      }
     } catch (error) {
       this.logger.error(`Error in findAdminMembers: ${error.message}`, error.stack);
       // Re-throw ForbiddenException as-is

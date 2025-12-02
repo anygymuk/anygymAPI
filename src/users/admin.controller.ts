@@ -18,7 +18,7 @@ import { AdminGymsPaginatedResponseDto } from './dto/admin-gyms-paginated-respon
 import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
 import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
 import { EventResponseDto } from './dto/event-response.dto';
-import { AdminMemberResponseDto } from './dto/admin-member-response.dto';
+import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-response.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -137,16 +137,19 @@ export class AdminController {
   @Get('members')
   async getAdminMembers(
     @Headers('auth0_id') auth0Id: string,
-  ): Promise<AdminMemberResponseDto[]> {
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('search') search?: string,
+  ): Promise<AdminMembersPaginatedResponseDto> {
     try {
-      this.logger.log(`GET /admin/members called with auth0_id: ${auth0Id}`);
+      this.logger.log(`GET /admin/members called with auth0_id: ${auth0Id}, page: ${page}, search: ${search || 'none'}`);
       
       // The Auth0Guard ensures auth0_id is present in headers
       // The service will verify the auth0_id exists in admin_users table
-      // and return members based on the user's role
-      const members = await this.usersService.findAdminMembers(auth0Id);
+      // and return paginated members based on the user's role
+      // If search is provided, pagination is ignored and all matching results are returned
+      const result = await this.usersService.findAdminMembers(auth0Id, page, search);
 
-      return members;
+      return result;
     } catch (error) {
       this.logger.error(`Error in getAdminMembers: ${error.message}`, error.stack);
       throw error;
