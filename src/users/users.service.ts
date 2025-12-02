@@ -1205,6 +1205,32 @@ export class UsersService {
         passes: passesDto,
       };
 
+      // Create event log
+      try {
+        const now = new Date();
+        const adminName = adminUser.name || 'Unknown';
+        const adminEmail = adminUser.email || 'Unknown';
+        const memberEmail = memberUser.email || 'Unknown';
+        
+        const eventDescription = `User ${adminName} ${adminEmail}, viewed personal data for member ${memberEmail}`;
+        
+        const newEvent = this.eventRepository.create({
+          userId: memberAuth0Id,
+          adminUser: adminAuth0Id,
+          gymId: null,
+          gymChainId: adminUser.gymChainId ? adminUser.gymChainId.toString() : null,
+          eventType: 'personal_data',
+          eventDescription: eventDescription,
+          createdAt: now,
+        });
+        
+        await this.eventRepository.save(newEvent);
+        this.logger.log(`Event record created successfully for admin member view`);
+      } catch (eventError) {
+        // Log error but don't fail the request if event creation fails
+        this.logger.error(`Failed to create event record: ${eventError.message}`, eventError.stack);
+      }
+
       return response;
     } catch (error) {
       this.logger.error(`Error in findAdminMemberView: ${error.message}`, error.stack);
