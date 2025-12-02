@@ -1308,17 +1308,16 @@ export class UsersService {
         }
       }
 
-      // Step 5: Create user in Auth0 with role assignment
+      // Step 5: Create user in Auth0 (role assignment removed as assign:roles scope not available)
       let auth0UserId: string;
       try {
         const auth0User = await this.auth0Service.createUser(
           createUserDto.email,
           createUserDto.name,
-          createUserDto.role, // Pass the role to be assigned in Auth0
           createUserDto.password
         );
         auth0UserId = auth0User.user_id;
-        this.logger.log(`Auth0 user created successfully with ID: ${auth0UserId} and role: ${createUserDto.role}`);
+        this.logger.log(`Auth0 user created successfully with ID: ${auth0UserId} (role will be managed separately)`);
       } catch (auth0Error: any) {
         this.logger.error(`Failed to create Auth0 user: ${auth0Error.message}`, auth0Error.stack);
         throw new BadRequestException(`Failed to create user in Auth0: ${auth0Error.message}`);

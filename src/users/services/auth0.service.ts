@@ -155,8 +155,6 @@ export class Auth0Service {
           `   - read:users\n` +
           `   - create:users\n` +
           `   - update:users\n` +
-          `   - read:roles\n` +
-          `   - assign:roles\n` +
           `6. AUTH0_DOMAIN is correct: ${this.managementApiUrl || 'NOT SET'}\n` +
           `7. AUTH0_MANAGEMENT_AUDIENCE is correct: ${this.managementApiAudience}\n\n` +
           `Auth0 Error Code: ${errorCode || 'N/A'}\n` +
@@ -172,81 +170,12 @@ export class Auth0Service {
     }
   }
 
-  /**
-   * Get role ID by role name from Auth0
-   */
-  private async getRoleIdByName(roleName: string): Promise<string | null> {
-    try {
-      const token = await this.getAccessToken();
-
-      // Auth0 roles API returns roles array directly, can filter by name
-      const response = await axios.get(
-        `https://${this.managementApiUrl}/api/v2/roles`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          params: {
-            name_filter: roleName,
-            per_page: 100,
-          },
-        }
-      );
-
-      // Auth0 returns roles as an array directly
-      const roles = response.data || [];
-      const role = Array.isArray(roles) ? roles.find((r: any) => r.name === roleName) : null;
-      
-      if (role && role.id) {
-        this.logger.log(`Found Auth0 role "${roleName}" with ID: ${role.id}`);
-        return role.id;
-      }
-
-      this.logger.warn(`Role "${roleName}" not found in Auth0`);
-      return null;
-    } catch (error: any) {
-      this.logger.error(`Failed to get role ID for "${roleName}": ${error.message}`, error.stack);
-      return null;
-    }
-  }
-
-  /**
-   * Assign a role to a user in Auth0
-   */
-  private async assignRoleToUser(userId: string, roleName: string): Promise<void> {
-    try {
-      const token = await this.getAccessToken();
-
-      // Get role ID by name
-      const roleId = await this.getRoleIdByName(roleName);
-      if (!roleId) {
-        throw new Error(`Role "${roleName}" not found in Auth0`);
-      }
-
-      // Assign role to user
-      await axios.post(
-        `https://${this.managementApiUrl}/api/v2/users/${encodeURIComponent(userId)}/roles`,
-        { roles: [roleId] },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      this.logger.log(`Successfully assigned role "${roleName}" to user ${userId}`);
-    } catch (error: any) {
-      this.logger.error(`Failed to assign role "${roleName}" to user: ${error.message}`, error.stack);
-      throw new Error(`Failed to assign role "${roleName}" to user: ${error.message}`);
-    }
-  }
 
   /**
    * Create a new user in Auth0
+   * Note: Role assignment has been removed as assign:roles scope is not available
    */
-  async createUser(email: string, name: string, role: string, password?: string): Promise<Auth0User> {
+  async createUser(email: string, name: string, password?: string): Promise<Auth0User> {
     try {
       const token = await this.getAccessToken();
 
@@ -270,30 +199,7 @@ export class Auth0Service {
 
       const userId = response.data.user_id;
       this.logger.log(`Successfully created Auth0 user: ${email} with ID: ${userId}`);
-
-      // Assign role to the user (required)
-      try {
-        await this.assignRoleToUser(userId, role);
-      } catch (roleError: any) {
-        // Role assignment is required, so we should fail if it doesn't work
-        // Attempt to clean up the created user
-        this.logger.error(`Role assignment failed for user ${userId}, attempting cleanup`);
-        try {
-          const cleanupToken = await this.getAccessToken();
-          await axios.delete(
-            `https://${this.managementApiUrl}/api/v2/users/${encodeURIComponent(userId)}`,
-            {
-              headers: {
-                Authorization: `Bearer ${cleanupToken}`,
-              },
-            }
-          );
-          this.logger.log(`Cleaned up Auth0 user ${userId} after role assignment failure`);
-        } catch (cleanupError) {
-          this.logger.error(`Failed to clean up Auth0 user ${userId} after role assignment failure`);
-        }
-        throw new Error(`User created but role assignment failed: ${roleError.message}`);
-      }
+      this.logger.log(`Note: Role assignment skipped - user created without role assignment`);
 
       return {
         user_id: userId,
