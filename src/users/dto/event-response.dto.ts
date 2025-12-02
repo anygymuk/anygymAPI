@@ -5,7 +5,6 @@ export class EventResponseDto {
   gym_id: string | null;
   gym_chain_id: string | null;
   gym_name: string | null;
-  gym_chain_name: string | null;
   event_type: string;
   event_description: string;
   created_at: Date;
