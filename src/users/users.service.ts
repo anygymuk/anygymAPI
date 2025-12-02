@@ -14,6 +14,7 @@ import { AdminGymsPaginatedResponseDto } from './dto/admin-gyms-paginated-respon
 import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
 import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
 import { EventResponseDto } from './dto/event-response.dto';
+import { AdminMemberResponseDto } from './dto/admin-member-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -870,6 +871,90 @@ export class UsersService {
       }
       // For other errors, wrap in a more descriptive error
       throw new Error(`Failed to fetch admin events: ${error.message}`);
+    }
+  }
+
+  async findAdminMembers(auth0Id: string): Promise<AdminMemberResponseDto[]> {
+    try {
+      this.logger.log(`Looking up admin members with auth0_id: ${auth0Id}`);
+      
+      // First, find the admin user to get their role and gym_chain_id or access_gyms
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
+
+      const now = new Date();
+
+      // Build base query with joins
+      let queryBuilder = this.gymPassRepository
+        .createQueryBuilder('pass')
+        .leftJoin('pass.user', 'user')
+        .leftJoin('pass.gym', 'gym')
+        .select([
+          'user.email AS member_email',
+          'COUNT(pass.id) AS passes',
+          'MAX(pass.createdAt) AS last_visit',
+          'MAX(CASE WHEN pass.validUntil IS NOT NULL AND pass.validUntil > :now THEN 1 ELSE 0 END) AS has_active_pass',
+        ])
+        .groupBy('user.email')
+        .setParameter('now', now);
+
+      // Apply role-based filtering
+      if (adminUser.role === 'admin') {
+        // Return all members who have generated passes for gyms matching the admin's gym_chain_id
+        if (adminUser.gymChainId) {
+          queryBuilder = queryBuilder.where('gym.gymChainId = :gymChainId', {
+            gymChainId: adminUser.gymChainId,
+          });
+          this.logger.log(`Filtering members for admin with gym_chain_id: ${adminUser.gymChainId}`);
+        } else {
+          this.logger.warn(`Admin user has no gym_chain_id`);
+          return [];
+        }
+      } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+        // Return all members who have generated passes for gyms in the access_gyms array
+        if (adminUser.accessGyms && adminUser.accessGyms.length > 0) {
+          queryBuilder = queryBuilder.where('gym.id IN (:...gymIds)', {
+            gymIds: adminUser.accessGyms,
+          });
+          this.logger.log(`Filtering members for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
+        } else {
+          this.logger.warn(`${adminUser.role} user has no access_gyms`);
+          return [];
+        }
+      } else {
+        this.logger.warn(`Unknown role: ${adminUser.role}`);
+        return [];
+      }
+
+      // Execute query and get raw results
+      const results = await queryBuilder.getRawMany();
+      this.logger.log(`Found ${results.length} members`);
+
+      // Transform to response DTO
+      const members = results.map((row) => ({
+        member_email: row.member_email,
+        passes: parseInt(row.passes, 10),
+        last_visit: row.last_visit ? new Date(row.last_visit) : null,
+        has_active_pass: parseInt(row.has_active_pass, 10) === 1,
+      }));
+
+      return members;
+    } catch (error) {
+      this.logger.error(`Error in findAdminMembers: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException as-is
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      // For other errors, wrap in a more descriptive error
+      throw new Error(`Failed to fetch admin members: ${error.message}`);
     }
   }
 }
