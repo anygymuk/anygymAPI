@@ -18,6 +18,7 @@ import { AdminMemberResponseDto } from './dto/admin-member-response.dto';
 import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-response.dto';
 import { AdminMemberViewResponseDto } from './dto/admin-member-view-response.dto';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
+import { AdminUserListItemDto } from './dto/admin-user-list-item.dto';
 import { Auth0Service } from './services/auth0.service';
 
 @Injectable()
@@ -1375,6 +1376,116 @@ export class UsersService {
       }
       // For other errors, wrap in a more descriptive error
       throw new BadRequestException(`Failed to create admin user: ${error.message}`);
+    }
+  }
+
+  async findAdminUserList(auth0Id: string): Promise<AdminUserListItemDto[]> {
+    try {
+      this.logger.log(`Looking up admin user list with auth0_id: ${auth0Id}`);
+      
+      // First, find the admin user to get their role and gym_chain_id or subordinates
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
+
+      let queryBuilder = this.adminUserRepository.createQueryBuilder('adminUser');
+
+      // Apply role-based filtering
+      if (adminUser.role === 'admin') {
+        // Return all admin_users associated to the user's gym_chain_id
+        if (adminUser.gymChainId) {
+          queryBuilder = queryBuilder.where('adminUser.gymChainId = :gymChainId', {
+            gymChainId: adminUser.gymChainId,
+          });
+          this.logger.log(`Filtering admin users for admin with gym_chain_id: ${adminUser.gymChainId}`);
+        } else {
+          this.logger.warn(`Admin user has no gym_chain_id`);
+          return [];
+        }
+      } else if (adminUser.role === 'gym_admin') {
+        // Return all admin_users in the user's subordinates array
+        // First, try to get subordinates from the database
+        let subordinates: string[] = [];
+        
+        try {
+          // Check if subordinates column exists and get it
+          const rawUser = await this.dataSource.query(
+            `SELECT subordinates FROM admin_users WHERE auth0_id = $1`,
+            [auth0Id]
+          );
+          
+          if (rawUser && rawUser.length > 0 && rawUser[0].subordinates) {
+            // Handle subordinates - could be JSONB array, JSON string, or comma-separated string
+            const subordinatesData = rawUser[0].subordinates;
+            if (Array.isArray(subordinatesData)) {
+              subordinates = subordinatesData;
+            } else if (typeof subordinatesData === 'string') {
+              try {
+                // Try parsing as JSON first
+                const parsed = JSON.parse(subordinatesData);
+                subordinates = Array.isArray(parsed) ? parsed : [subordinatesData];
+              } catch {
+                // If not JSON, treat as comma-separated string
+                subordinates = subordinatesData.split(',').map((s: string) => s.trim()).filter(Boolean);
+              }
+            }
+          }
+        } catch (error) {
+          this.logger.warn(`Could not fetch subordinates: ${error.message}`);
+        }
+
+        if (subordinates && subordinates.length > 0) {
+          queryBuilder = queryBuilder.where('adminUser.auth0Id IN (:...subordinateIds)', {
+            subordinateIds: subordinates,
+          });
+          this.logger.log(`Filtering admin users for gym_admin with subordinates: ${subordinates}`);
+        } else {
+          this.logger.warn(`Gym admin user has no subordinates`);
+          return [];
+        }
+      } else {
+        this.logger.warn(`Invalid role for user list: ${adminUser.role}`);
+        throw new ForbiddenException('Access denied: Invalid role for user list');
+      }
+
+      // Select fields
+      queryBuilder = queryBuilder.select([
+        'adminUser.auth0Id',
+        'adminUser.name',
+        'adminUser.email',
+        'adminUser.role',
+        'adminUser.permission',
+      ]);
+
+      // Execute query
+      const adminUsers = await queryBuilder.getMany();
+      this.logger.log(`Found ${adminUsers.length} admin user(s)`);
+
+      // Transform to response DTO
+      const results = adminUsers.map((user) => ({
+        auth0_id: user.auth0Id,
+        name: user.name || null,
+        email: user.email || null,
+        role: user.role || null,
+        permission: user.permission || null,
+      }));
+
+      return results;
+    } catch (error) {
+      this.logger.error(`Error in findAdminUserList: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException as-is
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      // For other errors, wrap in a more descriptive error
+      throw new Error(`Failed to fetch admin user list: ${error.message}`);
     }
   }
 }

@@ -23,6 +23,7 @@ import { EventResponseDto } from './dto/event-response.dto';
 import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-response.dto';
 import { AdminMemberViewResponseDto } from './dto/admin-member-view-response.dto';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
+import { AdminUserListItemDto } from './dto/admin-user-list-item.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -201,6 +202,25 @@ export class AdminController {
       return result;
     } catch (error) {
       this.logger.error(`Error in createAdminUser: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Get('user_list')
+  async getAdminUserList(
+    @Headers('auth0_id') auth0Id: string,
+  ): Promise<AdminUserListItemDto[]> {
+    try {
+      this.logger.log(`GET /admin/user_list called with auth0_id: ${auth0Id}`);
+      
+      // The Auth0Guard ensures auth0_id is present in headers
+      // The service will verify the auth0_id exists in admin_users table
+      // and return admin users based on the user's role
+      const userList = await this.usersService.findAdminUserList(auth0Id);
+
+      return userList;
+    } catch (error) {
+      this.logger.error(`Error in getAdminUserList: ${error.message}`, error.stack);
       throw error;
     }
   }
