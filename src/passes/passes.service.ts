@@ -9,6 +9,7 @@ import { PassesWithSubscriptionResponseDto, SubscriptionSummaryDto } from './dto
 import { Gym } from '../gyms/entities/gym.entity';
 import { PassPricing } from './entities/pass-pricing.entity';
 import { Subscription } from '../subscriptions/entities/subscription.entity';
+import { Event } from '../users/entities/event.entity';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
 import { SendGridService } from './services/sendgrid.service';
@@ -26,6 +27,8 @@ export class PassesService {
     private passPricingRepository: Repository<PassPricing>,
     @InjectRepository(Subscription)
     private subscriptionRepository: Repository<Subscription>,
+    @InjectRepository(Event)
+    private eventRepository: Repository<Event>,
     private subscriptionsService: SubscriptionsService,
     private usersService: UsersService,
     private sendGridService: SendGridService,
@@ -250,7 +253,32 @@ export class PassesService {
       const savedPass = await this.gymPassRepository.save(newPass);
       this.logger.log(`Pass created successfully with ID: ${savedPass.id}`);
 
-      // Step 6.5: Increment visits_used in the subscription
+      // Step 6.5: Get user details (needed for both event and email)
+      const user = await this.usersService.findOneByAuth0Id(auth0Id);
+
+      // Step 6.6: Create event record
+      try {
+        // Build event description
+        const eventDescription = `New pass created for ${gym.id}, ${gym.name} by member ${user.full_name || 'Unknown'}`;
+        
+        // Create event record
+        const newEvent = this.eventRepository.create({
+          userId: auth0Id,
+          gymId: generatePassDto.gym_id.toString(),
+          gymChainId: gym.gymChainId ? gym.gymChainId.toString() : null,
+          eventType: 'pass_created',
+          eventDescription: eventDescription,
+          createdAt: now,
+        });
+        
+        await this.eventRepository.save(newEvent);
+        this.logger.log(`Event record created successfully for pass ${savedPass.id}`);
+      } catch (eventError) {
+        // Log error but don't fail the request if event creation fails
+        this.logger.error(`Failed to create event record: ${eventError.message}`, eventError.stack);
+      }
+
+      // Step 6.7: Increment visits_used in the subscription
       // Fetch the subscription entity to update it
       const subscriptionEntity = await this.subscriptionRepository.findOne({
         where: { userId: auth0Id, status: 'active' },
@@ -269,8 +297,7 @@ export class PassesService {
         // Don't throw error - pass was already created, just log the issue
       }
 
-      // Step 7: Get user details for email
-      const user = await this.usersService.findOneByAuth0Id(auth0Id);
+      // Step 7: Send email via SendGrid (don't await - fire and forget)
 
       // Step 8: Send email via SendGrid (don't await - fire and forget)
       this.sendGridService.sendPassEmail({
