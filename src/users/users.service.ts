@@ -16,6 +16,7 @@ import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { AdminMemberResponseDto } from './dto/admin-member-response.dto';
 import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-response.dto';
+import { AdminMemberViewResponseDto } from './dto/admin-member-view-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -903,12 +904,14 @@ export class UsersService {
         .leftJoin('pass.user', 'user')
         .leftJoin('pass.gym', 'gym')
         .select([
+          'user.auth0Id AS auth0_id',
           'user.email AS member_email',
           'COUNT(pass.id) AS passes',
           'MAX(pass.createdAt) AS last_visit',
           'MAX(CASE WHEN pass.validUntil IS NOT NULL AND pass.validUntil > :now THEN 1 ELSE 0 END) AS has_active_pass',
         ])
-        .groupBy('user.email')
+        .groupBy('user.auth0Id')
+        .addGroupBy('user.email')
         .setParameter('now', now);
 
       // Apply role-based filtering
@@ -968,7 +971,7 @@ export class UsersService {
       }
 
       // Get total count before pagination
-      // Since we're grouping by user.email, we need to count distinct users
+      // Since we're grouping by user.auth0Id and user.email, we need to count distinct users
       // We'll execute the query first to get the count of distinct groups
       const allResults = await queryBuilder.getRawMany();
       const totalResults = allResults.length;
@@ -981,6 +984,7 @@ export class UsersService {
 
         // Transform to response DTO
         const members = allResults.map((row) => ({
+          auth0_id: row.auth0_id,
           member_email: row.member_email,
           passes: parseInt(row.passes, 10),
           last_visit: row.last_visit ? new Date(row.last_visit) : null,
@@ -1009,6 +1013,7 @@ export class UsersService {
 
         // Transform to response DTO
         const members = paginatedResults.map((row) => ({
+          auth0_id: row.auth0_id,
           member_email: row.member_email,
           passes: parseInt(row.passes, 10),
           last_visit: row.last_visit ? new Date(row.last_visit) : null,
@@ -1032,6 +1037,183 @@ export class UsersService {
       }
       // For other errors, wrap in a more descriptive error
       throw new Error(`Failed to fetch admin members: ${error.message}`);
+    }
+  }
+
+  async findAdminMemberView(adminAuth0Id: string, memberAuth0Id: string): Promise<AdminMemberViewResponseDto> {
+    try {
+      this.logger.log(`Looking up admin member view with admin auth0_id: ${adminAuth0Id}, member auth0_id: ${memberAuth0Id}`);
+      
+      // First, find the admin user to get their role and gym_chain_id or access_gyms
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id: adminAuth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${adminAuth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user found: ${adminAuth0Id}, role: ${adminUser.role}`);
+
+      // Get the member user
+      const memberUser = await this.userRepository.findOne({
+        where: { auth0Id: memberAuth0Id },
+      });
+
+      if (!memberUser) {
+        this.logger.warn(`Member user not found with auth0_id: ${memberAuth0Id}`);
+        throw new NotFoundException('Member not found');
+      }
+
+      this.logger.log(`Member user found: ${memberAuth0Id}`);
+
+      // Build query for passes with role-based filtering
+      let passQueryBuilder = this.gymPassRepository
+        .createQueryBuilder('pass')
+        .leftJoinAndSelect('pass.gym', 'gym')
+        .leftJoinAndSelect('gym.gymChain', 'gymChain')
+        .select([
+          'pass.id',
+          'pass.userId',
+          'pass.gymId',
+          'gym.name',
+          'gym.gymChainId',
+          'gymChain.name',
+          'gymChain.logo',
+          'pass.passCode',
+          'pass.status',
+          'pass.validUntil',
+          'pass.usedAt',
+          'pass.qrcodeUrl',
+          'pass.createdAt',
+          'pass.updatedAt',
+          'pass.subscriptionTier',
+        ])
+        .where('pass.userId = :memberAuth0Id', { memberAuth0Id });
+
+      // Apply role-based filtering for passes
+      if (adminUser.role === 'admin') {
+        // Return passes for gyms matching the admin's gym_chain_id
+        if (adminUser.gymChainId) {
+          passQueryBuilder = passQueryBuilder.andWhere('gym.gymChainId = :gymChainId', {
+            gymChainId: adminUser.gymChainId,
+          });
+          this.logger.log(`Filtering passes for admin with gym_chain_id: ${adminUser.gymChainId}`);
+        } else {
+          this.logger.warn(`Admin user has no gym_chain_id`);
+          // Return empty passes array
+        }
+      } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+        // Return passes for gyms in the access_gyms array
+        if (adminUser.accessGyms && adminUser.accessGyms.length > 0) {
+          passQueryBuilder = passQueryBuilder.andWhere('gym.id IN (:...gymIds)', {
+            gymIds: adminUser.accessGyms,
+          });
+          this.logger.log(`Filtering passes for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
+        } else {
+          this.logger.warn(`${adminUser.role} user has no access_gyms`);
+          // Return empty passes array
+        }
+      } else {
+        this.logger.warn(`Unknown role: ${adminUser.role}`);
+        // Return empty passes array
+      }
+
+      // Order by created_at descending (newest first)
+      passQueryBuilder = passQueryBuilder.orderBy('pass.createdAt', 'DESC');
+
+      const passes = await passQueryBuilder.getMany();
+      this.logger.log(`Found ${passes.length} pass(es) for member ${memberAuth0Id}`);
+
+      // Format dates helper
+      const formatDate = (date: Date | null): string | null => {
+        if (!date) return null;
+        if (date instanceof Date) {
+          return date.toISOString();
+        }
+        if (typeof date === 'string') {
+          return new Date(date).toISOString();
+        }
+        return null;
+      };
+
+      // Format date_of_birth
+      let dateOfBirth: string | null = null;
+      if (memberUser.dateOfBirth) {
+        try {
+          if (memberUser.dateOfBirth instanceof Date) {
+            dateOfBirth = memberUser.dateOfBirth.toISOString().split('T')[0];
+          } else if (typeof memberUser.dateOfBirth === 'string') {
+            dateOfBirth = new Date(memberUser.dateOfBirth).toISOString().split('T')[0];
+          }
+        } catch (dateError) {
+          this.logger.warn(`Error formatting date_of_birth: ${dateError.message}`);
+        }
+      }
+
+      // Transform passes to DTO
+      const passesDto: PassResponseDto[] = passes.map((pass) => ({
+        id: pass.id,
+        user_id: pass.userId,
+        gym_id: pass.gymId,
+        gym_name: pass.gym?.name || null,
+        gym_chain_id: pass.gym?.gymChainId || null,
+        gym_chain_name: pass.gym?.gymChain?.name || null,
+        gym_chain_logo: pass.gym?.gymChain?.logo || null,
+        pass_code: pass.passCode,
+        status: pass.status,
+        valid_until: formatDate(pass.validUntil),
+        used_at: formatDate(pass.usedAt),
+        qrcode_url: pass.qrcodeUrl || null,
+        created_at: formatDate(pass.createdAt) || '',
+        updated_at: formatDate(pass.updatedAt) || '',
+        subscription_tier: pass.subscriptionTier || null,
+      }));
+
+      // Get created_at and updated_at from database if they exist
+      // Since they're not in the entity, we'll try to get them via raw query
+      let createdAt: string | null = null;
+      let updatedAt: string | null = null;
+      try {
+        const rawUser = await this.dataSource.query(
+          `SELECT created_at, updated_at FROM app_users WHERE auth0_id = $1`,
+          [memberAuth0Id]
+        );
+        if (rawUser && rawUser.length > 0) {
+          createdAt = rawUser[0].created_at ? formatDate(rawUser[0].created_at) : null;
+          updatedAt = rawUser[0].updated_at ? formatDate(rawUser[0].updated_at) : null;
+        }
+      } catch (error) {
+        this.logger.warn(`Could not fetch created_at/updated_at: ${error.message}`);
+      }
+
+      // Build response
+      const response: AdminMemberViewResponseDto = {
+        email: memberUser.email || '',
+        full_name: memberUser.fullName || null,
+        onboarding_completed: memberUser.onboardingCompleted ?? false,
+        address_line1: memberUser.addressLine1 || null,
+        address_line2: memberUser.addressLine2 || null,
+        address_city: memberUser.addressCity || null,
+        address_postcode: memberUser.addressPostcode || null,
+        date_of_birth: dateOfBirth,
+        created_at: createdAt,
+        updated_at: updatedAt,
+        emergency_contact_name: memberUser.emergencyContactName || null,
+        emergency_contact_number: memberUser.emergencyContactNumber || null,
+        passes: passesDto,
+      };
+
+      return response;
+    } catch (error) {
+      this.logger.error(`Error in findAdminMemberView: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException and NotFoundException as-is
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw error;
+      }
+      // For other errors, wrap in a more descriptive error
+      throw new Error(`Failed to fetch admin member view: ${error.message}`);
     }
   }
 }

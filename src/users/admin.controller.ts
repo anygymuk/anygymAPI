@@ -10,6 +10,7 @@ import {
   Logger,
   ParseIntPipe,
   DefaultValuePipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { Auth0Guard } from './guards/auth0.guard';
@@ -19,6 +20,7 @@ import { AdminGymDetailResponseDto } from './dto/admin-gym-detail-response.dto';
 import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-response.dto';
+import { AdminMemberViewResponseDto } from './dto/admin-member-view-response.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -152,6 +154,30 @@ export class AdminController {
       return result;
     } catch (error) {
       this.logger.error(`Error in getAdminMembers: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Get('members/view')
+  async getAdminMemberView(
+    @Headers('auth0_id') auth0Id: string,
+    @Headers('member_auth0_id') memberAuth0Id: string,
+  ): Promise<AdminMemberViewResponseDto> {
+    try {
+      this.logger.log(`GET /admin/members/view called with auth0_id: ${auth0Id}, member_auth0_id: ${memberAuth0Id}`);
+      
+      if (!memberAuth0Id) {
+        throw new BadRequestException('member_auth0_id header is required');
+      }
+
+      // The Auth0Guard ensures auth0_id is present in headers
+      // The service will verify the auth0_id exists in admin_users table
+      // and return member data with passes filtered by the admin's role
+      const memberView = await this.usersService.findAdminMemberView(auth0Id, memberAuth0Id);
+
+      return memberView;
+    } catch (error) {
+      this.logger.error(`Error in getAdminMemberView: ${error.message}`, error.stack);
       throw error;
     }
   }
