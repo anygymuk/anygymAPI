@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -17,6 +17,8 @@ import { EventResponseDto } from './dto/event-response.dto';
 import { AdminMemberResponseDto } from './dto/admin-member-response.dto';
 import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-response.dto';
 import { AdminMemberViewResponseDto } from './dto/admin-member-view-response.dto';
+import { CreateAdminUserDto } from './dto/create-admin-user.dto';
+import { Auth0Service } from './services/auth0.service';
 
 @Injectable()
 export class UsersService {
@@ -34,6 +36,7 @@ export class UsersService {
     @InjectRepository(Gym)
     private gymRepository: Repository<Gym>,
     private dataSource: DataSource,
+    private auth0Service: Auth0Service,
   ) {}
 
   /**
@@ -1238,6 +1241,140 @@ export class UsersService {
       }
       // For other errors, wrap in a more descriptive error
       throw new Error(`Failed to fetch admin member view: ${error.message}`);
+    }
+  }
+
+  async createAdminUser(adminAuth0Id: string, createUserDto: CreateAdminUserDto): Promise<{ message: string }> {
+    try {
+      this.logger.log(`Creating admin user with admin auth0_id: ${adminAuth0Id}`);
+
+      // Step 1: Validate the requesting admin user
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id: adminAuth0Id },
+      });
+
+      if (!adminUser) {
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      // Step 2: Check if gym_staff can create users (they cannot)
+      if (adminUser.role === 'gym_staff') {
+        throw new ForbiddenException('Access denied: gym_staff cannot create users');
+      }
+
+      // Step 3: Validate that admin or gym_admin can only create for their gym_chain_id
+      if (adminUser.role !== 'admin' && adminUser.role !== 'gym_admin') {
+        throw new ForbiddenException('Access denied: Invalid role for user creation');
+      }
+
+      if (!adminUser.gymChainId) {
+        throw new BadRequestException('Admin user must have a gym_chain_id to create users');
+      }
+
+      // Step 4: Validate access_gyms if provided
+      if (createUserDto.access_gyms && createUserDto.access_gyms.length > 0) {
+        // Check if gym_admin can only assign from their own access_gyms
+        if (adminUser.role === 'gym_admin') {
+          const invalidGyms = createUserDto.access_gyms.filter(
+            (gymId) => !adminUser.accessGyms || !adminUser.accessGyms.includes(gymId)
+          );
+          if (invalidGyms.length > 0) {
+            throw new BadRequestException(
+              `Access denied: You can only assign gyms from your own access_gyms. Invalid gym IDs: ${invalidGyms.join(', ')}`
+            );
+          }
+        }
+
+        // Validate that all access_gyms belong to the gym_chain_id
+        const gyms = await this.gymRepository
+          .createQueryBuilder('gym')
+          .where('gym.id IN (:...gymIds)', { gymIds: createUserDto.access_gyms })
+          .getMany();
+
+        // Check if all requested gym IDs were found
+        const foundGymIds = gyms.map((gym) => gym.id);
+        const notFoundGyms = createUserDto.access_gyms.filter((gymId) => !foundGymIds.includes(gymId));
+        if (notFoundGyms.length > 0) {
+          throw new BadRequestException(`Invalid gym IDs: ${notFoundGyms.join(', ')}`);
+        }
+
+        // Check that all gyms belong to the gym_chain_id
+        const gymsNotInChain = gyms.filter((gym) => gym.gymChainId !== adminUser.gymChainId);
+        if (gymsNotInChain.length > 0) {
+          throw new BadRequestException(
+            `Some gyms do not belong to your gym_chain_id: ${gymsNotInChain.map((g) => g.id).join(', ')}`
+          );
+        }
+      }
+
+      // Step 5: Create user in Auth0 with role assignment
+      let auth0UserId: string;
+      try {
+        const auth0User = await this.auth0Service.createUser(
+          createUserDto.email,
+          createUserDto.name,
+          createUserDto.role, // Pass the role to be assigned in Auth0
+          createUserDto.password
+        );
+        auth0UserId = auth0User.user_id;
+        this.logger.log(`Auth0 user created successfully with ID: ${auth0UserId} and role: ${createUserDto.role}`);
+      } catch (auth0Error: any) {
+        this.logger.error(`Failed to create Auth0 user: ${auth0Error.message}`, auth0Error.stack);
+        throw new BadRequestException(`Failed to create user in Auth0: ${auth0Error.message}`);
+      }
+
+      // Step 6: Check if admin_user already exists (shouldn't happen, but safety check)
+      const existingAdminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id: auth0UserId },
+      });
+
+      if (existingAdminUser) {
+        // If Auth0 user was created but admin_user already exists, we might need to clean up
+        this.logger.warn(`Admin user already exists for auth0_id: ${auth0UserId}`);
+        throw new BadRequestException('User already exists in admin_users table');
+      }
+
+      // Step 7: Create admin_user record
+      const now = new Date();
+      const newAdminUser = this.adminUserRepository.create({
+        auth0Id: auth0UserId,
+        email: createUserDto.email,
+        name: createUserDto.name,
+        gymChainId: adminUser.gymChainId,
+        role: createUserDto.role,
+        permission: createUserDto.permission,
+        accessGyms: createUserDto.access_gyms && createUserDto.access_gyms.length > 0 ? createUserDto.access_gyms : null,
+      });
+
+      await this.adminUserRepository.save(newAdminUser);
+      this.logger.log(`Admin user created successfully in database with auth0_id: ${auth0UserId}`);
+
+      // Step 8: Update date_created and date_updated if they exist in the database
+      try {
+        await this.dataSource.query(
+          `UPDATE admin_users SET date_created = $1, date_updated = $1 WHERE auth0_id = $2`,
+          [now, auth0UserId]
+        );
+      } catch (error) {
+        // If columns don't exist, that's okay - just log it
+        this.logger.warn(`Could not update date_created/date_updated: ${error.message}`);
+      }
+
+      return {
+        message: 'Admin user created successfully',
+      };
+    } catch (error) {
+      this.logger.error(`Error in createAdminUser: ${error.message}`, error.stack);
+      // Re-throw known exceptions as-is
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      // For other errors, wrap in a more descriptive error
+      throw new BadRequestException(`Failed to create admin user: ${error.message}`);
     }
   }
 }

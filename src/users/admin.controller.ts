@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Headers,
   Body,
@@ -21,6 +22,7 @@ import { UpdateAdminGymDto } from './dto/update-admin-gym.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-response.dto';
 import { AdminMemberViewResponseDto } from './dto/admin-member-view-response.dto';
+import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -178,6 +180,27 @@ export class AdminController {
       return memberView;
     } catch (error) {
       this.logger.error(`Error in getAdminMemberView: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Post('user/create')
+  async createAdminUser(
+    @Headers('auth0_id') auth0Id: string,
+    @Body() createUserDto: CreateAdminUserDto,
+  ): Promise<{ message: string }> {
+    try {
+      this.logger.log(`POST /admin/user/create called with auth0_id: ${auth0Id}`);
+      this.logger.log(`Request body: ${JSON.stringify(createUserDto)}`);
+      
+      // The Auth0Guard ensures auth0_id is present in headers
+      // The service will verify the auth0_id exists in admin_users table
+      // check permissions based on role, create user in Auth0, and create admin_user record
+      const result = await this.usersService.createAdminUser(auth0Id, createUserDto);
+
+      return result;
+    } catch (error) {
+      this.logger.error(`Error in createAdminUser: ${error.message}`, error.stack);
       throw error;
     }
   }
