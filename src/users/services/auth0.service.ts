@@ -37,11 +37,37 @@ export class Auth0Service {
     this.managementApiUrl = domain;
     this.managementApiClientId = this.configService.get<string>('AUTH0_MANAGEMENT_CLIENT_ID') || '';
     this.managementApiClientSecret = this.configService.get<string>('AUTH0_MANAGEMENT_CLIENT_SECRET') || '';
-    this.managementApiAudience = this.configService.get<string>('AUTH0_MANAGEMENT_AUDIENCE') || `https://${this.managementApiUrl}/api/v2/`;
+    
+    // Handle audience - strip protocol if present, ensure proper format
+    let audience = this.configService.get<string>('AUTH0_MANAGEMENT_AUDIENCE') || '';
+    if (audience) {
+      // Remove trailing slash if present
+      audience = audience.replace(/\/$/, '');
+      // Ensure it starts with https://
+      if (!audience.startsWith('https://')) {
+        audience = `https://${audience}`;
+      }
+    } else {
+      // Default audience format
+      audience = `https://${this.managementApiUrl}/api/v2/`;
+    }
+    this.managementApiAudience = audience;
+    
     this.connection = this.configService.get<string>('AUTH0_CONNECTION') || 'Username-Password-Authentication';
     
+    // Log configuration status (without exposing secrets)
+    this.logger.log(`Auth0 Service initialized:`);
+    this.logger.log(`  - Domain: ${this.managementApiUrl || 'NOT SET'}`);
+    this.logger.log(`  - Client ID: ${this.managementApiClientId ? 'SET' : 'NOT SET'}`);
+    this.logger.log(`  - Client Secret: ${this.managementApiClientSecret ? 'SET' : 'NOT SET'}`);
+    this.logger.log(`  - Audience: ${this.managementApiAudience}`);
+    this.logger.log(`  - Connection: ${this.connection}`);
+    
     if (!this.managementApiUrl) {
-      this.logger.warn('AUTH0_DOMAIN is not set in environment variables');
+      this.logger.error('AUTH0_DOMAIN is not set in environment variables');
+    }
+    if (!this.managementApiClientId || !this.managementApiClientSecret) {
+      this.logger.error('AUTH0_MANAGEMENT_CLIENT_ID or AUTH0_MANAGEMENT_CLIENT_SECRET is not set');
     }
   }
 
@@ -68,16 +94,16 @@ export class Auth0Service {
       this.logger.log(`Attempting to authenticate with Auth0 at: ${tokenUrl}`);
       this.logger.log(`Using audience: ${this.managementApiAudience}`);
       
-      const requestBody = {
-        client_id: this.managementApiClientId,
-        client_secret: this.managementApiClientSecret,
-        audience: this.managementApiAudience,
-        grant_type: 'client_credentials',
-      };
+      // Auth0 OAuth token endpoint prefers form-encoded data
+      const params = new URLSearchParams();
+      params.append('client_id', this.managementApiClientId);
+      params.append('client_secret', this.managementApiClientSecret);
+      params.append('audience', this.managementApiAudience);
+      params.append('grant_type', 'client_credentials');
       
-      const response = await axios.post(tokenUrl, requestBody, {
+      const response = await axios.post(tokenUrl, params.toString(), {
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
       });
 
@@ -89,27 +115,52 @@ export class Auth0Service {
     } catch (error: any) {
       let errorMessage = error.message;
       let errorDetails = '';
+      let errorCode = '';
       
       if (error.response?.data) {
-        errorDetails = JSON.stringify(error.response.data);
+        errorDetails = JSON.stringify(error.response.data, null, 2);
+        errorCode = error.response.data.error || '';
         errorMessage = error.response.data.error_description || error.response.data.error || error.response.data.message || error.message;
       }
       
       this.logger.error(`Failed to get Auth0 access token: ${errorMessage}`);
+      this.logger.error(`Auth0 error code: ${errorCode || 'N/A'}`);
       if (errorDetails) {
         this.logger.error(`Auth0 error details: ${errorDetails}`);
       }
+      this.logger.error(`Request URL: https://${this.managementApiUrl}/oauth/token`);
+      this.logger.error(`Client ID: ${this.managementApiClientId ? 'SET (length: ' + this.managementApiClientId.length + ')' : 'NOT SET'}`);
+      this.logger.error(`Client Secret: ${this.managementApiClientSecret ? 'SET (length: ' + this.managementApiClientSecret.length + ')' : 'NOT SET'}`);
+      this.logger.error(`Audience: ${this.managementApiAudience}`);
       
       if (error.response?.status === 401) {
+        // Provide specific error messages based on Auth0 error codes
+        let specificMessage = '';
+        if (errorCode === 'invalid_client') {
+          specificMessage = 'Invalid client credentials. Please verify AUTH0_MANAGEMENT_CLIENT_ID and AUTH0_MANAGEMENT_CLIENT_SECRET are correct.';
+        } else if (errorCode === 'invalid_audience') {
+          specificMessage = `Invalid audience. Expected: ${this.managementApiAudience}. Make sure your Auth0 application is authorized for the Management API.`;
+        } else if (errorCode === 'access_denied') {
+          specificMessage = 'Access denied. The application may not be authorized for the Management API or may be missing required scopes.';
+        }
+        
         throw new Error(
-          `Authentication failed (401). Please verify:\n` +
-          `1. AUTH0_MANAGEMENT_CLIENT_ID is correct\n` +
-          `2. AUTH0_MANAGEMENT_CLIENT_SECRET is correct\n` +
-          `3. The application has "Management API" enabled in Auth0 Dashboard\n` +
-          `4. The application has the necessary scopes/permissions (e.g., "read:users", "create:users", "read:roles", "assign:roles")\n` +
-          `5. AUTH0_DOMAIN is correct: ${this.managementApiUrl}\n` +
-          `6. AUTH0_MANAGEMENT_AUDIENCE is correct: ${this.managementApiAudience}\n` +
-          `Auth0 Error: ${errorMessage}`
+          `Authentication failed (401). ${specificMessage || ''}\n\n` +
+          `Please verify:\n` +
+          `1. AUTH0_MANAGEMENT_CLIENT_ID is correct (currently: ${this.managementApiClientId ? 'SET' : 'NOT SET'})\n` +
+          `2. AUTH0_MANAGEMENT_CLIENT_SECRET is correct (currently: ${this.managementApiClientSecret ? 'SET' : 'NOT SET'})\n` +
+          `3. The application is a Machine-to-Machine application in Auth0 Dashboard\n` +
+          `4. The application has "Management API" enabled in Auth0 Dashboard (APIs → Auth0 Management API → Machine to Machine Applications)\n` +
+          `5. The application has the necessary scopes/permissions enabled:\n` +
+          `   - read:users\n` +
+          `   - create:users\n` +
+          `   - update:users\n` +
+          `   - read:roles\n` +
+          `   - assign:roles\n` +
+          `6. AUTH0_DOMAIN is correct: ${this.managementApiUrl || 'NOT SET'}\n` +
+          `7. AUTH0_MANAGEMENT_AUDIENCE is correct: ${this.managementApiAudience}\n\n` +
+          `Auth0 Error Code: ${errorCode || 'N/A'}\n` +
+          `Auth0 Error Message: ${errorMessage}`
         );
       }
       
