@@ -1004,8 +1004,6 @@ export class UsersService {
         const paginatedResults = allResults.slice(offset, offset + pageSize);
         this.logger.log(`Returning ${paginatedResults.length} members for page ${page}`);
 
-        this.logger.log(`Returning ${results.length} members for page ${page}`);
-
         // Calculate result_set string
         const startResult = totalResults > 0 ? offset + 1 : 0;
         const endResult = Math.min(offset + pageSize, totalResults);
