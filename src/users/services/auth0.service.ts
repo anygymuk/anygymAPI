@@ -27,11 +27,22 @@ export class Auth0Service {
   private tokenExpiry: Date | null = null;
 
   constructor(private configService: ConfigService) {
-    this.managementApiUrl = this.configService.get<string>('AUTH0_DOMAIN') || '';
+    // Get domain and strip protocol if present
+    let domain = this.configService.get<string>('AUTH0_DOMAIN') || '';
+    // Remove https:// or http:// prefix if present
+    domain = domain.replace(/^https?:\/\//, '');
+    // Remove trailing slash if present
+    domain = domain.replace(/\/$/, '');
+    
+    this.managementApiUrl = domain;
     this.managementApiClientId = this.configService.get<string>('AUTH0_MANAGEMENT_CLIENT_ID') || '';
     this.managementApiClientSecret = this.configService.get<string>('AUTH0_MANAGEMENT_CLIENT_SECRET') || '';
     this.managementApiAudience = this.configService.get<string>('AUTH0_MANAGEMENT_AUDIENCE') || `https://${this.managementApiUrl}/api/v2/`;
     this.connection = this.configService.get<string>('AUTH0_CONNECTION') || 'Username-Password-Authentication';
+    
+    if (!this.managementApiUrl) {
+      this.logger.warn('AUTH0_DOMAIN is not set in environment variables');
+    }
   }
 
   /**
@@ -43,12 +54,31 @@ export class Auth0Service {
       return this.accessToken;
     }
 
+    // Validate configuration
+    if (!this.managementApiUrl) {
+      throw new Error('AUTH0_DOMAIN is not configured. Please set it in your environment variables.');
+    }
+
+    if (!this.managementApiClientId || !this.managementApiClientSecret) {
+      throw new Error('AUTH0_MANAGEMENT_CLIENT_ID and AUTH0_MANAGEMENT_CLIENT_SECRET must be configured.');
+    }
+
     try {
-      const response = await axios.post(`https://${this.managementApiUrl}/oauth/token`, {
+      const tokenUrl = `https://${this.managementApiUrl}/oauth/token`;
+      this.logger.log(`Attempting to authenticate with Auth0 at: ${tokenUrl}`);
+      this.logger.log(`Using audience: ${this.managementApiAudience}`);
+      
+      const requestBody = {
         client_id: this.managementApiClientId,
         client_secret: this.managementApiClientSecret,
         audience: this.managementApiAudience,
         grant_type: 'client_credentials',
+      };
+      
+      const response = await axios.post(tokenUrl, requestBody, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
 
       this.accessToken = response.data.access_token;
@@ -56,9 +86,38 @@ export class Auth0Service {
       this.tokenExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000);
       this.logger.log('Successfully obtained Auth0 Management API access token');
       return this.accessToken;
-    } catch (error) {
-      this.logger.error(`Failed to get Auth0 access token: ${error.message}`, error.stack);
-      throw new Error(`Failed to authenticate with Auth0 Management API: ${error.message}`);
+    } catch (error: any) {
+      let errorMessage = error.message;
+      let errorDetails = '';
+      
+      if (error.response?.data) {
+        errorDetails = JSON.stringify(error.response.data);
+        errorMessage = error.response.data.error_description || error.response.data.error || error.response.data.message || error.message;
+      }
+      
+      this.logger.error(`Failed to get Auth0 access token: ${errorMessage}`);
+      if (errorDetails) {
+        this.logger.error(`Auth0 error details: ${errorDetails}`);
+      }
+      
+      if (error.response?.status === 401) {
+        throw new Error(
+          `Authentication failed (401). Please verify:\n` +
+          `1. AUTH0_MANAGEMENT_CLIENT_ID is correct\n` +
+          `2. AUTH0_MANAGEMENT_CLIENT_SECRET is correct\n` +
+          `3. The application has "Management API" enabled in Auth0 Dashboard\n` +
+          `4. The application has the necessary scopes/permissions (e.g., "read:users", "create:users", "read:roles", "assign:roles")\n` +
+          `5. AUTH0_DOMAIN is correct: ${this.managementApiUrl}\n` +
+          `6. AUTH0_MANAGEMENT_AUDIENCE is correct: ${this.managementApiAudience}\n` +
+          `Auth0 Error: ${errorMessage}`
+        );
+      }
+      
+      if (error.code === 'ENOTFOUND') {
+        throw new Error(`Failed to connect to Auth0 domain "${this.managementApiUrl}". Please verify AUTH0_DOMAIN is set correctly (e.g., "your-domain.auth0.com" without https://)`);
+      }
+      
+      throw new Error(`Failed to authenticate with Auth0 Management API: ${errorMessage}`);
     }
   }
 
