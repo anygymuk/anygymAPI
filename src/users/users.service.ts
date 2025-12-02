@@ -795,7 +795,22 @@ export class UsersService {
 
       this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
 
-      let queryBuilder = this.eventRepository.createQueryBuilder('event');
+      let queryBuilder = this.eventRepository
+        .createQueryBuilder('event')
+        .leftJoin(Gym, 'gym', 'CAST(event.gymId AS INTEGER) = gym.id')
+        .leftJoin(GymChain, 'gymChain', 'CAST(event.gymChainId AS INTEGER) = gymChain.id')
+        .select([
+          'event.id AS event_id',
+          'event.userId AS event_user_id',
+          'event.adminUser AS event_admin_user',
+          'event.gymId AS event_gym_id',
+          'event.gymChainId AS event_gym_chain_id',
+          'event.eventType AS event_event_type',
+          'event.eventDescription AS event_event_description',
+          'event.createdAt AS event_created_at',
+          'gym.name AS gym_name',
+          'gymChain.name AS gymChain_name',
+        ]);
 
       // Based on role, apply different filters
       if (adminUser.role === 'admin') {
@@ -831,20 +846,22 @@ export class UsersService {
         return [];
       }
 
-      // Get all matching events
-      const events = await queryBuilder.getMany();
+      // Get all matching events with joins
+      const events = await queryBuilder.getRawMany();
       this.logger.log(`Found ${events.length} events`);
 
       // Transform to response DTO
-      const results = events.map((event) => ({
-        id: event.id,
-        user_id: event.userId,
-        admin_user: event.adminUser,
-        gym_id: event.gymId,
-        gym_chain_id: event.gymChainId,
-        event_type: event.eventType,
-        event_description: event.eventDescription,
-        created_at: event.createdAt,
+      const results = events.map((row) => ({
+        id: row.event_id,
+        user_id: row.event_user_id,
+        admin_user: row.event_admin_user,
+        gym_id: row.event_gym_id,
+        gym_chain_id: row.event_gym_chain_id,
+        gym_name: row.gym_name || null,
+        gym_chain_name: row.gymChain_name || null,
+        event_type: row.event_event_type,
+        event_description: row.event_event_description,
+        created_at: row.event_created_at,
       }));
 
       return results;
