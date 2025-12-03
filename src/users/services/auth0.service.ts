@@ -39,24 +39,22 @@ export class Auth0Service {
     this.managementApiClientSecret = this.configService.get<string>('AUTH0_MANAGEMENT_CLIENT_SECRET') || '';
     
     // Handle audience - Auth0 Management API audience format
+    // Auth0 Management API audience should be: https://{domain}/api/v2/ (with trailing slash)
     let audience = this.configService.get<string>('AUTH0_MANAGEMENT_AUDIENCE') || '';
     if (audience) {
       // Ensure it starts with https://
       if (!audience.startsWith('https://')) {
         audience = `https://${audience}`;
       }
-      // Auth0 Management API audience should be exactly: https://{domain}/api/v2/
       // Normalize to ensure it ends with /api/v2/ (with trailing slash)
       audience = audience.trim();
-      if (!audience.endsWith('/api/v2/')) {
-        // Remove any trailing slashes first
-        audience = audience.replace(/\/+$/, '');
-        // Add /api/v2/ if not present
-        if (!audience.endsWith('/api/v2')) {
-          audience = `${audience}/api/v2/`;
-        } else {
-          audience = `${audience}/`;
-        }
+      // Remove any trailing slashes first
+      audience = audience.replace(/\/+$/, '');
+      // Ensure it ends with /api/v2/
+      if (!audience.endsWith('/api/v2')) {
+        audience = `${audience}/api/v2/`;
+      } else {
+        audience = `${audience}/`;
       }
     } else {
       // Default audience format - Auth0 Management API requires this exact format
