@@ -38,17 +38,25 @@ export class Auth0Service {
     this.managementApiClientId = this.configService.get<string>('AUTH0_MANAGEMENT_CLIENT_ID') || '';
     this.managementApiClientSecret = this.configService.get<string>('AUTH0_MANAGEMENT_CLIENT_SECRET') || '';
     
-    // Handle audience - strip protocol if present, ensure proper format
+    // Handle audience - ensure proper format for Auth0 Management API
     let audience = this.configService.get<string>('AUTH0_MANAGEMENT_AUDIENCE') || '';
     if (audience) {
-      // Remove trailing slash if present
-      audience = audience.replace(/\/$/, '');
       // Ensure it starts with https://
       if (!audience.startsWith('https://')) {
         audience = `https://${audience}`;
       }
+      // Ensure it ends with /api/v2/ (Auth0 Management API requires this format)
+      if (!audience.endsWith('/api/v2/')) {
+        // Remove trailing slash if present, then add /api/v2/
+        audience = audience.replace(/\/$/, '');
+        if (!audience.endsWith('/api/v2')) {
+          audience = `${audience}/api/v2/`;
+        } else {
+          audience = `${audience}/`;
+        }
+      }
     } else {
-      // Default audience format
+      // Default audience format - Auth0 Management API requires trailing slash
       audience = `https://${this.managementApiUrl}/api/v2/`;
     }
     this.managementApiAudience = audience;
@@ -129,9 +137,10 @@ export class Auth0Service {
         this.logger.error(`Auth0 error details: ${errorDetails}`);
       }
       this.logger.error(`Request URL: https://${this.managementApiUrl}/oauth/token`);
-      this.logger.error(`Client ID: ${this.managementApiClientId ? 'SET (length: ' + this.managementApiClientId.length + ')' : 'NOT SET'}`);
+      this.logger.error(`Client ID: ${this.managementApiClientId ? 'SET (length: ' + this.managementApiClientId.length + ', starts with: ' + this.managementApiClientId.substring(0, 10) + '...)' : 'NOT SET'}`);
       this.logger.error(`Client Secret: ${this.managementApiClientSecret ? 'SET (length: ' + this.managementApiClientSecret.length + ')' : 'NOT SET'}`);
       this.logger.error(`Audience: ${this.managementApiAudience}`);
+      this.logger.error(`Full request body would be: client_id=${this.managementApiClientId}&client_secret=***&audience=${this.managementApiAudience}&grant_type=client_credentials`);
       
       if (error.response?.status === 401) {
         // Provide specific error messages based on Auth0 error codes
@@ -167,6 +176,38 @@ export class Auth0Service {
       }
       
       throw new Error(`Failed to authenticate with Auth0 Management API: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Test Auth0 connection - useful for debugging
+   */
+  async testConnection(): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      const token = await this.getAccessToken();
+      return {
+        success: true,
+        message: 'Successfully authenticated with Auth0 Management API',
+        details: {
+          domain: this.managementApiUrl,
+          audience: this.managementApiAudience,
+          connection: this.connection,
+          clientIdSet: !!this.managementApiClientId,
+          clientSecretSet: !!this.managementApiClientSecret,
+        },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.message,
+        details: {
+          domain: this.managementApiUrl,
+          audience: this.managementApiAudience,
+          connection: this.connection,
+          clientIdSet: !!this.managementApiClientId,
+          clientSecretSet: !!this.managementApiClientSecret,
+        },
+      };
     }
   }
 
