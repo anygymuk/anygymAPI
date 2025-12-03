@@ -1809,6 +1809,17 @@ export class UsersService {
 
       this.logger.log(`Admin user found: ${adminAuth0Id}, gym_chain_id: ${adminUser.gymChainId}`);
 
+      // Get admin user's gym chain name for error message
+      const adminGymChain = await this.gymRepository
+        .createQueryBuilder('gym')
+        .leftJoin('gym.gymChain', 'gymChain')
+        .select(['gymChain.id', 'gymChain.name'])
+        .where('gym.gymChainId = :gymChainId', { gymChainId: adminUser.gymChainId })
+        .limit(1)
+        .getRawOne();
+
+      const adminGymChainName = adminGymChain?.gymChain_name || 'Unknown Gym Chain';
+
       // Step 2: Find the pass by pass_code with gym and gym_chain information
       const pass = await this.gymPassRepository
         .createQueryBuilder('pass')
@@ -1822,14 +1833,13 @@ export class UsersService {
       }
 
       const passGymChainId = pass.gym?.gymChainId;
-      const gymChainName = pass.gym?.gymChain?.name || 'Unknown Gym Chain';
 
       this.logger.log(`Pass found: ${pass.id}, gym_id: ${pass.gymId}, gym_chain_id: ${passGymChainId}`);
 
       // Step 3: Validate that the pass's gym belongs to the admin user's gym_chain_id
       if (!passGymChainId || passGymChainId !== adminUser.gymChainId) {
         this.logger.warn(`Pass ${normalizedPassCode} does not belong to admin's gym chain. Pass gym_chain_id: ${passGymChainId}, Admin gym_chain_id: ${adminUser.gymChainId}`);
-        throw new BadRequestException(`This pass is not allowed for ${gymChainName}`);
+        throw new BadRequestException(`This pass is not for ${adminGymChainName}`);
       }
 
       // Step 4: Return pass data
