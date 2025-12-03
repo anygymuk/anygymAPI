@@ -1487,5 +1487,9 @@ export class UsersService {
       throw new Error(`Failed to fetch admin user list: ${error.message}`);
     }
   }
+
+  async testAuth0Connection(): Promise<{ success: boolean; message: string; details?: any }> {
+    return await this.auth0Service.testConnection();
+  }
 }
 

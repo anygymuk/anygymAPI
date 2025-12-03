@@ -224,5 +224,34 @@ export class AdminController {
       throw error;
     }
   }
+
+  @Get('auth0/test')
+  async testAuth0Connection(
+    @Headers('auth0_id') auth0Id: string,
+  ): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      this.logger.log(`GET /admin/auth0/test called with auth0_id: ${auth0Id}`);
+      
+      // Verify admin user exists
+      const adminUser = await this.usersService.findAdminUserByAuth0Id(auth0Id);
+      
+      // Test Auth0 connection
+      const result = await this.usersService.testAuth0Connection();
+      
+      return {
+        ...result,
+        details: {
+          ...result.details,
+          adminUser: {
+            role: adminUser.role,
+            email: adminUser.email,
+          },
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error in testAuth0Connection: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
 }
 
