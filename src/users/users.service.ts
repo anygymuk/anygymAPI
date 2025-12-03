@@ -1361,6 +1361,29 @@ export class UsersService {
         this.logger.warn(`Could not update date_created/date_updated: ${error.message}`);
       }
 
+      // Step 9: Create event log
+      try {
+        const initiatorEmail = adminUser.email || 'Unknown';
+        const createdUserEmail = createUserDto.email || 'Unknown';
+        const eventDescription = `User ${initiatorEmail} created user ${createdUserEmail}`;
+        
+        const newEvent = this.eventRepository.create({
+          userId: null,
+          adminUser: adminAuth0Id,
+          gymId: null,
+          gymChainId: adminUser.gymChainId ? adminUser.gymChainId.toString() : null,
+          eventType: 'new_user',
+          eventDescription: eventDescription,
+          createdAt: now,
+        });
+        
+        await this.eventRepository.save(newEvent);
+        this.logger.log(`Event record created successfully for new admin user creation`);
+      } catch (eventError) {
+        // Log error but don't fail the request if event creation fails
+        this.logger.error(`Failed to create event record: ${eventError.message}`, eventError.stack);
+      }
+
       return {
         message: 'Admin user created successfully',
       };
