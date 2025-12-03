@@ -1939,9 +1939,9 @@ export class UsersService {
       const adminUserEmail = adminUser.email || 'Unknown';
       const gymName = pass.gym?.name || 'Unknown Gym';
 
-      // Step 5: Update the pass with status "Used", used_at, and updated_at
+      // Step 5: Update the pass with status "used", used_at, and updated_at
       const now = new Date();
-      pass.status = 'Used';
+      pass.status = 'used';
       pass.usedAt = now;
       pass.updatedAt = now;
 
