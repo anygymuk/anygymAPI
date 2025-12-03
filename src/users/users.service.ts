@@ -19,6 +19,7 @@ import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-
 import { AdminMemberViewResponseDto } from './dto/admin-member-view-response.dto';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { AdminUserListItemDto } from './dto/admin-user-list-item.dto';
+import { AdminLocationResponseDto } from './dto/admin-location-response.dto';
 import { Auth0Service } from './services/auth0.service';
 
 @Injectable()
@@ -1490,6 +1491,83 @@ export class UsersService {
 
   async testAuth0Connection(): Promise<{ success: boolean; message: string; details?: any }> {
     return await this.auth0Service.testConnection();
+  }
+
+  async findAdminLocations(auth0Id: string): Promise<AdminLocationResponseDto[]> {
+    try {
+      this.logger.log(`Looking up admin user locations with auth0_id: ${auth0Id}`);
+      
+      // First, find the admin user to get their role and gym_chain_id or access_gyms
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
+
+      let queryBuilder = this.gymRepository
+        .createQueryBuilder('gym')
+        .select([
+          'gym.id',
+          'gym.name',
+          'gym.gymChainId',
+          'gym.address',
+          'gym.postcode',
+          'gym.city',
+        ]);
+
+      // Based on role, apply different filters
+      if (adminUser.role === 'admin') {
+        // Return all gyms where gym_chain_id matches the admin user's gym_chain_id
+        if (adminUser.gymChainId) {
+          queryBuilder = queryBuilder.where('gym.gymChainId = :gymChainId', { 
+            gymChainId: adminUser.gymChainId 
+          });
+          this.logger.log(`Filtering locations for admin with gym_chain_id: ${adminUser.gymChainId}`);
+        } else {
+          this.logger.warn(`Admin user has no gym_chain_id`);
+          return [];
+        }
+      } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+        // Return all gyms where id exists in the user's access_gyms array
+        if (adminUser.accessGyms && adminUser.accessGyms.length > 0) {
+          queryBuilder = queryBuilder.where('gym.id IN (:...gymIds)', { 
+            gymIds: adminUser.accessGyms 
+          });
+          this.logger.log(`Filtering locations for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
+        } else {
+          this.logger.warn(`${adminUser.role} user has no access_gyms`);
+          return [];
+        }
+      } else {
+        this.logger.warn(`Unknown role: ${adminUser.role}`);
+        return [];
+      }
+
+      const gyms = await queryBuilder.getMany();
+      this.logger.log(`Found ${gyms.length} locations for admin user ${auth0Id}`);
+
+      // Map to response DTO
+      return gyms.map((gym) => ({
+        id: gym.id,
+        name: gym.name,
+        gym_chain_id: gym.gymChainId,
+        address: gym.address,
+        postcode: gym.postcode,
+        city: gym.city,
+      }));
+    } catch (error) {
+      this.logger.error(`Error in findAdminLocations: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException as-is
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new Error(`Failed to fetch admin locations: ${error.message}`);
+    }
   }
 }
 

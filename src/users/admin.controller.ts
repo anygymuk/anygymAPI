@@ -24,6 +24,7 @@ import { AdminMembersPaginatedResponseDto } from './dto/admin-members-paginated-
 import { AdminMemberViewResponseDto } from './dto/admin-member-view-response.dto';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { AdminUserListItemDto } from './dto/admin-user-list-item.dto';
+import { AdminLocationResponseDto } from './dto/admin-location-response.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -221,6 +222,20 @@ export class AdminController {
       return userList;
     } catch (error) {
       this.logger.error(`Error in getAdminUserList: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Get('locations')
+  async getAdminLocations(
+    @Headers('auth0_id') auth0Id: string,
+  ): Promise<AdminLocationResponseDto[]> {
+    try {
+      this.logger.log(`GET /admin/locations called with auth0_id: ${auth0Id}`);
+      const locations = await this.usersService.findAdminLocations(auth0Id);
+      return locations;
+    } catch (error) {
+      this.logger.error(`Error in getAdminLocations: ${error.message}`, error.stack);
       throw error;
     }
   }
