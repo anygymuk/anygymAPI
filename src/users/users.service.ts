@@ -20,6 +20,8 @@ import { AdminMemberViewResponseDto } from './dto/admin-member-view-response.dto
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { AdminUserListItemDto } from './dto/admin-user-list-item.dto';
 import { AdminLocationResponseDto } from './dto/admin-location-response.dto';
+import { AdminPassResponseDto } from './dto/admin-pass-response.dto';
+import { AdminPassesPaginatedResponseDto } from './dto/admin-passes-paginated-response.dto';
 import { Auth0Service } from './services/auth0.service';
 
 @Injectable()
@@ -1590,6 +1592,188 @@ export class UsersService {
         throw error;
       }
       throw new Error(`Failed to fetch admin locations: ${error.message}`);
+    }
+  }
+
+  async findAdminPasses(auth0Id: string, page: number = 1, search?: string): Promise<AdminPassesPaginatedResponseDto> {
+    try {
+      this.logger.log(`Looking up admin passes with auth0_id: ${auth0Id}, page: ${page}, search: ${search || 'none'}`);
+      
+      const pageSize = 20;
+      const offset = (page - 1) * pageSize;
+      const isSearchMode = !!search;
+
+      // First, find the admin user to get their role and gym_chain_id or access_gyms
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
+
+      // Build query for passes with join to gyms for filtering
+      let queryBuilder = this.gymPassRepository
+        .createQueryBuilder('pass')
+        .innerJoin('pass.gym', 'gym')
+        .leftJoin('pass.user', 'user')
+        .select([
+          'pass.id',
+          'pass.userId',
+          'pass.gymId',
+          'pass.passCode',
+          'pass.status',
+          'pass.validUntil',
+          'pass.usedAt',
+          'pass.qrcodeUrl',
+          'pass.createdAt',
+          'pass.updatedAt',
+          'pass.subscriptionTier',
+        ]);
+
+      // Based on role, apply different filters
+      if (adminUser.role === 'admin') {
+        // Return all passes where the pass's gym_id is associated with the same gym_chain_id
+        if (adminUser.gymChainId) {
+          queryBuilder = queryBuilder.where('gym.gymChainId = :gymChainId', { 
+            gymChainId: adminUser.gymChainId 
+          });
+          this.logger.log(`Filtering passes for admin with gym_chain_id: ${adminUser.gymChainId}`);
+        } else {
+          this.logger.warn(`Admin user has no gym_chain_id`);
+          return {
+            results: [],
+            pagination: {
+              total_results: 0,
+              page: isSearchMode ? 1 : page,
+              result_set: '0 to 0',
+            },
+          };
+        }
+      } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+        // Return all passes where the pass's gym_id is in the user's access_gyms array
+        if (adminUser.accessGyms && adminUser.accessGyms.length > 0) {
+          queryBuilder = queryBuilder.where('pass.gymId IN (:...gymIds)', { 
+            gymIds: adminUser.accessGyms 
+          });
+          this.logger.log(`Filtering passes for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
+        } else {
+          this.logger.warn(`${adminUser.role} user has no access_gyms`);
+          return {
+            results: [],
+            pagination: {
+              total_results: 0,
+              page: isSearchMode ? 1 : page,
+              result_set: '0 to 0',
+            },
+          };
+        }
+      } else {
+        this.logger.warn(`Unknown role: ${adminUser.role}`);
+        return {
+          results: [],
+          pagination: {
+            total_results: 0,
+            page: isSearchMode ? 1 : page,
+            result_set: '0 to 0',
+          },
+        };
+      }
+
+      // Apply search filter if search parameter is provided
+      if (isSearchMode) {
+        const searchPattern = `%${search}%`;
+        queryBuilder = queryBuilder.andWhere(
+          '(pass.passCode ILIKE :search OR user.email ILIKE :search)',
+          { search: searchPattern }
+        );
+        this.logger.log(`Applying search filter: ${search}`);
+      }
+
+      // Order by created_at descending (newest first)
+      queryBuilder = queryBuilder.orderBy('pass.createdAt', 'DESC');
+
+      // Get total count before pagination
+      const totalResults = await queryBuilder.getCount();
+      this.logger.log(`Total passes found: ${totalResults}`);
+
+      // Apply pagination only if not in search mode
+      if (isSearchMode) {
+        // In search mode, return all results without pagination
+        const passes = await queryBuilder.getMany();
+        this.logger.log(`Returning ${passes.length} passes from search (no pagination)`);
+
+        // Map to response DTO
+        const results = passes.map((pass) => ({
+          id: pass.id,
+          user_id: pass.userId,
+          gym_id: pass.gymId,
+          pass_code: pass.passCode,
+          status: pass.status,
+          valid_until: pass.validUntil,
+          used_at: pass.usedAt,
+          qr_code_url: pass.qrcodeUrl,
+          created_at: pass.createdAt,
+          updated_at: pass.updatedAt,
+          subscription_tier: pass.subscriptionTier,
+        }));
+
+        return {
+          results,
+          pagination: {
+            total_results: totalResults,
+            page: 1,
+            result_set: totalResults > 0 ? `1 to ${totalResults}` : '0 to 0',
+          },
+        };
+      } else {
+        // Normal pagination mode
+        const passes = await queryBuilder
+          .skip(offset)
+          .take(pageSize)
+          .getMany();
+
+        this.logger.log(`Returning ${passes.length} passes for page ${page}`);
+
+        // Calculate result_set string
+        const startResult = totalResults > 0 ? offset + 1 : 0;
+        const endResult = Math.min(offset + pageSize, totalResults);
+        const resultSet = `${startResult} to ${endResult}`;
+
+        // Map to response DTO
+        const results = passes.map((pass) => ({
+          id: pass.id,
+          user_id: pass.userId,
+          gym_id: pass.gymId,
+          pass_code: pass.passCode,
+          status: pass.status,
+          valid_until: pass.validUntil,
+          used_at: pass.usedAt,
+          qr_code_url: pass.qrcodeUrl,
+          created_at: pass.createdAt,
+          updated_at: pass.updatedAt,
+          subscription_tier: pass.subscriptionTier,
+        }));
+
+        return {
+          results,
+          pagination: {
+            total_results: totalResults,
+            page: page,
+            result_set: resultSet,
+          },
+        };
+      }
+    } catch (error) {
+      this.logger.error(`Error in findAdminPasses: ${error.message}`, error.stack);
+      // Re-throw ForbiddenException as-is
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new Error(`Failed to fetch admin passes: ${error.message}`);
     }
   }
 }
