@@ -22,6 +22,7 @@ import { AdminUserListItemDto } from './dto/admin-user-list-item.dto';
 import { AdminLocationResponseDto } from './dto/admin-location-response.dto';
 import { AdminPassResponseDto } from './dto/admin-pass-response.dto';
 import { AdminPassesPaginatedResponseDto } from './dto/admin-passes-paginated-response.dto';
+import { AdminCheckInResponseDto } from './dto/admin-check-in-response.dto';
 import { Auth0Service } from './services/auth0.service';
 
 @Injectable()
@@ -1685,12 +1686,17 @@ export class UsersService {
 
       // Apply search filter if search parameter is provided
       if (isSearchMode) {
-        const searchPattern = `%${search}%`;
+        // Prepend "PASS-" to search term if it doesn't already start with it
+        let searchTerm = search.trim();
+        if (!searchTerm.toUpperCase().startsWith('PASS-')) {
+          searchTerm = `PASS-${searchTerm}`;
+        }
+        const searchPattern = `%${searchTerm}%`;
         queryBuilder = queryBuilder.andWhere(
           '(pass.passCode ILIKE :search OR user.email ILIKE :search)',
           { search: searchPattern }
         );
-        this.logger.log(`Applying search filter: ${search}`);
+        this.logger.log(`Applying search filter: ${searchTerm} (original: ${search})`);
       }
 
       // Order by created_at descending (newest first)
@@ -1774,6 +1780,82 @@ export class UsersService {
         throw error;
       }
       throw new Error(`Failed to fetch admin passes: ${error.message}`);
+    }
+  }
+
+  async checkInPass(adminAuth0Id: string, passCode: string): Promise<AdminCheckInResponseDto> {
+    try {
+      // Prepend "PASS-" to pass code if it doesn't already start with it
+      let normalizedPassCode = passCode.trim();
+      if (!normalizedPassCode.toUpperCase().startsWith('PASS-')) {
+        normalizedPassCode = `PASS-${normalizedPassCode}`;
+      }
+      
+      this.logger.log(`Checking in pass with admin auth0_id: ${adminAuth0Id}, pass_code: ${normalizedPassCode} (original: ${passCode})`);
+      
+      // Step 1: Find the admin user
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id: adminAuth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${adminAuth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      if (!adminUser.gymChainId) {
+        throw new BadRequestException('Admin user must be associated with a gym chain');
+      }
+
+      this.logger.log(`Admin user found: ${adminAuth0Id}, gym_chain_id: ${adminUser.gymChainId}`);
+
+      // Step 2: Find the pass by pass_code with gym and gym_chain information
+      const pass = await this.gymPassRepository
+        .createQueryBuilder('pass')
+        .innerJoinAndSelect('pass.gym', 'gym')
+        .leftJoinAndSelect('gym.gymChain', 'gymChain')
+        .where('pass.passCode = :passCode', { passCode: normalizedPassCode })
+        .getOne();
+
+      if (!pass) {
+        throw new NotFoundException('Pass not found');
+      }
+
+      const passGymChainId = pass.gym?.gymChainId;
+      const gymChainName = pass.gym?.gymChain?.name || 'Unknown Gym Chain';
+
+      this.logger.log(`Pass found: ${pass.id}, gym_id: ${pass.gymId}, gym_chain_id: ${passGymChainId}`);
+
+      // Step 3: Validate that the pass's gym belongs to the admin user's gym_chain_id
+      if (!passGymChainId || passGymChainId !== adminUser.gymChainId) {
+        this.logger.warn(`Pass ${normalizedPassCode} does not belong to admin's gym chain. Pass gym_chain_id: ${passGymChainId}, Admin gym_chain_id: ${adminUser.gymChainId}`);
+        throw new BadRequestException(`This pass is not allowed for ${gymChainName}`);
+      }
+
+      // Step 4: Return pass data
+      return {
+        id: pass.id,
+        user_id: pass.userId,
+        gym_id: pass.gymId,
+        pass_code: pass.passCode,
+        status: pass.status,
+        valid_until: pass.validUntil,
+        used_at: pass.usedAt,
+        qr_code_url: pass.qrcodeUrl,
+        created_at: pass.createdAt,
+        updated_at: pass.updatedAt,
+      };
+    } catch (error) {
+      this.logger.error(`Error in checkInPass: ${error.message}`, error.stack);
+      // Re-throw known exceptions as-is
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new Error(`Failed to check in pass: ${error.message}`);
     }
   }
 }

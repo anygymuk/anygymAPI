@@ -27,6 +27,7 @@ import { AdminUserListItemDto } from './dto/admin-user-list-item.dto';
 import { AdminLocationResponseDto } from './dto/admin-location-response.dto';
 import { AdminPassResponseDto } from './dto/admin-pass-response.dto';
 import { AdminPassesPaginatedResponseDto } from './dto/admin-passes-paginated-response.dto';
+import { AdminCheckInResponseDto } from './dto/admin-check-in-response.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)
@@ -254,6 +255,26 @@ export class AdminController {
       return result;
     } catch (error) {
       this.logger.error(`Error in getAdminPasses: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Post('check_in')
+  async checkInPass(
+    @Headers('auth0_id') auth0Id: string,
+    @Headers('pass_code') passCode: string,
+  ): Promise<AdminCheckInResponseDto> {
+    try {
+      this.logger.log(`POST /admin/check_in called with auth0_id: ${auth0Id}, pass_code: ${passCode || 'none'}`);
+      
+      if (!passCode) {
+        throw new BadRequestException('pass_code header is required');
+      }
+
+      const result = await this.usersService.checkInPass(auth0Id, passCode);
+      return result;
+    } catch (error) {
+      this.logger.error(`Error in checkInPass: ${error.message}`, error.stack);
       throw error;
     }
   }
