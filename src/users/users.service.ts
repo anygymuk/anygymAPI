@@ -1868,5 +1868,122 @@ export class UsersService {
       throw new Error(`Failed to check in pass: ${error.message}`);
     }
   }
+
+  async completeCheckIn(adminAuth0Id: string, passCode: string): Promise<{ message: string }> {
+    try {
+      // Prepend "PASS-" to pass code if it doesn't already start with it
+      let normalizedPassCode = passCode.trim();
+      if (!normalizedPassCode.toUpperCase().startsWith('PASS-')) {
+        normalizedPassCode = `PASS-${normalizedPassCode}`;
+      }
+      
+      this.logger.log(`Completing check-in for pass with admin auth0_id: ${adminAuth0Id}, pass_code: ${normalizedPassCode} (original: ${passCode})`);
+      
+      // Step 1: Find the admin user
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id: adminAuth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${adminAuth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      if (!adminUser.gymChainId) {
+        throw new BadRequestException('Admin user must be associated with a gym chain');
+      }
+
+      this.logger.log(`Admin user found: ${adminAuth0Id}, gym_chain_id: ${adminUser.gymChainId}`);
+
+      // Step 2: Find the pass by pass_code with gym information
+      const pass = await this.gymPassRepository
+        .createQueryBuilder('pass')
+        .innerJoinAndSelect('pass.gym', 'gym')
+        .where('pass.passCode = :passCode', { passCode: normalizedPassCode })
+        .getOne();
+
+      if (!pass) {
+        throw new NotFoundException('Pass not found');
+      }
+
+      const passGymChainId = pass.gym?.gymChainId;
+
+      this.logger.log(`Pass found: ${pass.id}, gym_id: ${pass.gymId}, gym_chain_id: ${passGymChainId}`);
+
+      // Step 3: Validate that the pass's gym belongs to the admin user's gym_chain_id
+      if (!passGymChainId || passGymChainId !== adminUser.gymChainId) {
+        // Get admin user's gym chain name for error message
+        const adminGymChain = await this.gymRepository
+          .createQueryBuilder('gym')
+          .leftJoin('gym.gymChain', 'gymChain')
+          .select(['gymChain.id', 'gymChain.name'])
+          .where('gym.gymChainId = :gymChainId', { gymChainId: adminUser.gymChainId })
+          .limit(1)
+          .getRawOne();
+
+        const adminGymChainName = adminGymChain?.gymChain_name || 'Unknown Gym Chain';
+        this.logger.warn(`Pass ${normalizedPassCode} does not belong to admin's gym chain. Pass gym_chain_id: ${passGymChainId}, Admin gym_chain_id: ${adminUser.gymChainId}`);
+        throw new BadRequestException(`This pass is not for ${adminGymChainName}`);
+      }
+
+      // Step 4: Get app user details for event logging
+      const appUser = await this.userRepository.findOne({
+        where: { auth0Id: pass.userId },
+      });
+
+      if (!appUser) {
+        this.logger.warn(`App user not found with auth0_id: ${pass.userId}`);
+      }
+
+      const appUserEmail = appUser?.email || 'Unknown';
+      const adminUserEmail = adminUser.email || 'Unknown';
+      const gymName = pass.gym?.name || 'Unknown Gym';
+
+      // Step 5: Update the pass with status "Used", used_at, and updated_at
+      const now = new Date();
+      pass.status = 'Used';
+      pass.usedAt = now;
+      pass.updatedAt = now;
+
+      await this.gymPassRepository.save(pass);
+      this.logger.log(`Pass ${normalizedPassCode} marked as used successfully`);
+
+      // Step 6: Create event record
+      try {
+        const eventDescription = `${adminUserEmail} check-in ${appUserEmail} to ${gymName}`;
+        
+        const newEvent = this.eventRepository.create({
+          userId: pass.userId,
+          adminUser: adminAuth0Id,
+          gymId: pass.gymId.toString(),
+          gymChainId: passGymChainId ? passGymChainId.toString() : null,
+          eventType: 'check_in',
+          eventDescription: eventDescription,
+          createdAt: now,
+        });
+        
+        await this.eventRepository.save(newEvent);
+        this.logger.log(`Event record created successfully for check-in`);
+      } catch (eventError) {
+        // Log error but don't fail the request if event creation fails
+        this.logger.error(`Failed to create event record: ${eventError.message}`, eventError.stack);
+      }
+
+      return {
+        message: 'User is checked-in',
+      };
+    } catch (error) {
+      this.logger.error(`Error in completeCheckIn: ${error.message}`, error.stack);
+      // Re-throw known exceptions as-is
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new Error(`Failed to complete check-in: ${error.message}`);
+    }
+  }
 }
 

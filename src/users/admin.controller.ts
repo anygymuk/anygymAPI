@@ -279,6 +279,26 @@ export class AdminController {
     }
   }
 
+  @Post('check_in/complete')
+  async completeCheckIn(
+    @Headers('auth0_id') auth0Id: string,
+    @Headers('pass_code') passCode: string,
+  ): Promise<{ message: string }> {
+    try {
+      this.logger.log(`POST /admin/check_in/complete called with auth0_id: ${auth0Id}, pass_code: ${passCode || 'none'}`);
+      
+      if (!passCode) {
+        throw new BadRequestException('pass_code header is required');
+      }
+
+      const result = await this.usersService.completeCheckIn(auth0Id, passCode);
+      return result;
+    } catch (error) {
+      this.logger.error(`Error in completeCheckIn: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
   @Get('auth0/test')
   async testAuth0Connection(
     @Headers('auth0_id') auth0Id: string,
