@@ -7,6 +7,7 @@ import { Event } from './entities/event.entity';
 import { GymPass } from '../passes/entities/gym-pass.entity';
 import { Gym } from '../gyms/entities/gym.entity';
 import { GymChain } from '../gyms/entities/gym-chain.entity';
+import { Subscription } from '../subscriptions/entities/subscription.entity';
 import { UserResponseDto } from './dto/user-response.dto';
 import { PassResponseDto } from '../passes/dto/pass-response.dto';
 import { AdminGymResponseDto } from './dto/admin-gym-response.dto';
@@ -40,6 +41,8 @@ export class UsersService {
     private gymPassRepository: Repository<GymPass>,
     @InjectRepository(Gym)
     private gymRepository: Repository<Gym>,
+    @InjectRepository(Subscription)
+    private subscriptionRepository: Repository<Subscription>,
     private dataSource: DataSource,
     private auth0Service: Auth0Service,
   ) {}
@@ -137,6 +140,23 @@ export class UsersService {
         }
       }
 
+      // Find active subscription and get tier
+      let membership: string | null = null;
+      try {
+        const activeSubscription = await this.subscriptionRepository.findOne({
+          where: { userId: auth0Id, status: 'active' },
+        });
+        if (activeSubscription) {
+          membership = activeSubscription.tier;
+          this.logger.log(`Active subscription found for user ${auth0Id}, tier: ${membership}`);
+        } else {
+          this.logger.log(`No active subscription found for user ${auth0Id}`);
+        }
+      } catch (subscriptionError) {
+        this.logger.warn(`Error fetching subscription for user ${auth0Id}: ${subscriptionError.message}`);
+        // Don't fail the request if subscription lookup fails, just leave membership as null
+      }
+
       const response = {
         auth0_id: user.auth0Id || '',
         email: user.email || '',
@@ -150,6 +170,7 @@ export class UsersService {
         stripe_customer_id: user.stripeCustomerId || null,
         emergency_contact_name: user.emergencyContactName || null,
         emergency_contact_number: user.emergencyContactNumber || null,
+        membership: membership,
       };
       return this.removeEmptyValues(response) as UserResponseDto;
     } catch (error) {

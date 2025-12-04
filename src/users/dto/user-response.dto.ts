@@ -11,5 +11,6 @@ export class UserResponseDto {
   stripe_customer_id: string | null;
   emergency_contact_name: string | null;
   emergency_contact_number: string | null;
+  membership: string | null;
 }
 
