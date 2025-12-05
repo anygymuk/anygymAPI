@@ -24,6 +24,7 @@ import { AdminLocationResponseDto } from './dto/admin-location-response.dto';
 import { AdminPassResponseDto } from './dto/admin-pass-response.dto';
 import { AdminPassesPaginatedResponseDto } from './dto/admin-passes-paginated-response.dto';
 import { AdminCheckInResponseDto } from './dto/admin-check-in-response.dto';
+import { ChainResponseDto } from './dto/chain-response.dto';
 import { Auth0Service } from './services/auth0.service';
 
 @Injectable()
@@ -41,6 +42,8 @@ export class UsersService {
     private gymPassRepository: Repository<GymPass>,
     @InjectRepository(Gym)
     private gymRepository: Repository<Gym>,
+    @InjectRepository(GymChain)
+    private gymChainRepository: Repository<GymChain>,
     @InjectRepository(Subscription)
     private subscriptionRepository: Repository<Subscription>,
     private dataSource: DataSource,
@@ -2004,6 +2007,29 @@ export class UsersService {
         throw error;
       }
       throw new Error(`Failed to complete check-in: ${error.message}`);
+    }
+  }
+
+  async findAllChains(): Promise<{ id: number; name: string }[]> {
+    try {
+      this.logger.log('Finding all gym chains');
+      
+      const chains = await this.gymChainRepository.find({
+        select: ['id', 'name'],
+        order: {
+          name: 'ASC',
+        },
+      });
+
+      this.logger.log(`Found ${chains.length} gym chains`);
+      
+      return chains.map(chain => ({
+        id: chain.id,
+        name: chain.name,
+      }));
+    } catch (error) {
+      this.logger.error(`Error in findAllChains: ${error.message}`, error.stack);
+      throw new Error(`Failed to retrieve chains: ${error.message}`);
     }
   }
 }

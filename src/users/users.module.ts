@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersController } from './users.controller';
 import { AdminController } from './admin.controller';
+import { ChainsController } from './chains.controller';
 import { UsersService } from './users.service';
 import { User } from './entities/user.entity';
 import { AdminUser } from './entities/admin-user.entity';
@@ -15,7 +16,7 @@ import { Auth0Service } from './services/auth0.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([User, AdminUser, Event, GymPass, Gym, GymChain, Subscription])],
-  controllers: [UsersController, AdminController],
+  controllers: [UsersController, AdminController, ChainsController],
   providers: [UsersService, Auth0Guard, Auth0Service],
   exports: [UsersService],
 })
