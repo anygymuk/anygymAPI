@@ -62,10 +62,23 @@ export class ContentService {
           }
         }
 
+        // Extract headline from content.content.value structure
+        let headline: string | null = null;
+        if (fields.headline && fields.headline.content && Array.isArray(fields.headline.content)) {
+          // Get the first content block and extract its value
+          const firstContent = fields.headline.content[0];
+          if (firstContent && firstContent.content && Array.isArray(firstContent.content)) {
+            const firstValue = firstContent.content[0];
+            if (firstValue && firstValue.value) {
+              headline = firstValue.value;
+            }
+          }
+        }
+
         return {
           id: item.sys.id,
           title: fields.title || '',
-          headline: fields.headline || null,
+          headline: headline,
           slug: fields.slug || '',
           published_date: fields.publishedDate ? new Date(fields.publishedDate) : null,
           excerpt: fields.excerpt || null,
