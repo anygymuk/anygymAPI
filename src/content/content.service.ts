@@ -46,9 +46,20 @@ export class ContentService {
         const fields = item.fields as any;
         
         // Extract featured image URL from heroImage if available
+        // heroImage has structure: fields.image[0].url or fields.image[0].secure_url
         let featuredImageUrl: string | null = null;
-        if (fields.heroImage && fields.heroImage.fields && fields.heroImage.fields.file) {
-          featuredImageUrl = `https:${fields.heroImage.fields.file.url}`;
+        let featuredImageAlt: string | null = null;
+        
+        if (fields.heroImage && fields.heroImage.fields) {
+          // Extract alt text
+          featuredImageAlt = fields.heroImage.fields.altText || null;
+          
+          // Extract image URL from the image array
+          if (fields.heroImage.fields.image && Array.isArray(fields.heroImage.fields.image) && fields.heroImage.fields.image.length > 0) {
+            const imageData = fields.heroImage.fields.image[0];
+            // Prefer secure_url if available, otherwise use url
+            featuredImageUrl = imageData.secure_url || imageData.url || null;
+          }
         }
 
         return {
@@ -58,6 +69,7 @@ export class ContentService {
           published_date: fields.publishedDate ? new Date(fields.publishedDate) : null,
           excerpt: fields.excerpt || null,
           featured_image: featuredImageUrl,
+          featured_image_alt: featuredImageAlt,
         };
       });
 

@@ -5,5 +5,6 @@ export class ArticleListingItemDto {
   published_date: Date | null;
   excerpt: string | null;
   featured_image: string | null;
+  featured_image_alt: string | null;
 }
 
