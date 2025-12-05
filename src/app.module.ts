@@ -6,6 +6,7 @@ import { UsersModule } from './users/users.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PassesModule } from './passes/passes.module';
 import { StripeModule } from './stripe/stripe.module';
+import { ContentModule } from './content/content.module';
 import { Gym } from './gyms/entities/gym.entity';
 import { GymChain } from './gyms/entities/gym-chain.entity';
 import { Rating } from './gyms/entities/rating.entity';
@@ -53,6 +54,7 @@ import { PassPricing } from './passes/entities/pass-pricing.entity';
     SubscriptionsModule,
     PassesModule,
     StripeModule,
+    ContentModule,
   ],
 })
 export class AppModule {}
