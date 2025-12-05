@@ -39,7 +39,7 @@ export class ContentService {
         content_type: 'article',
         skip: skip,
         limit: limit,
-        order: '-sys.createdAt', // Order by creation date descending (newest first)
+        order: ['-sys.createdAt'], // Order by creation date descending (newest first)
       });
 
       const articles: ArticleListingItemDto[] = response.items.map((item) => {
