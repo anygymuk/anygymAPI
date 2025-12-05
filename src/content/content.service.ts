@@ -45,10 +45,10 @@ export class ContentService {
       const articles: ArticleListingItemDto[] = response.items.map((item) => {
         const fields = item.fields as any;
         
-        // Extract featured image URL if available
+        // Extract featured image URL from heroImage if available
         let featuredImageUrl: string | null = null;
-        if (fields.featuredImage && fields.featuredImage.fields && fields.featuredImage.fields.file) {
-          featuredImageUrl = `https:${fields.featuredImage.fields.file.url}`;
+        if (fields.heroImage && fields.heroImage.fields && fields.heroImage.fields.file) {
+          featuredImageUrl = `https:${fields.heroImage.fields.file.url}`;
         }
 
         return {
