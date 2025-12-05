@@ -65,6 +65,7 @@ export class ContentService {
         return {
           id: item.sys.id,
           title: fields.title || '',
+          headline: fields.headline || null,
           slug: fields.slug || '',
           published_date: fields.publishedDate ? new Date(fields.publishedDate) : null,
           excerpt: fields.excerpt || null,
