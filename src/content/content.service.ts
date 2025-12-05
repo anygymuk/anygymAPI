@@ -29,18 +29,26 @@ export class ContentService {
     this.logger.log(`Contentful client initialized for space: ${spaceId}, environment: ${environment}`);
   }
 
-  async getAllArticles(page: number = 1, limit: number = 20): Promise<ArticleListingsResponseDto> {
+  async getAllArticles(page: number = 1, limit: number = 20, category?: string): Promise<ArticleListingsResponseDto> {
     try {
-      this.logger.log(`Fetching articles - page: ${page}, limit: ${limit}`);
+      this.logger.log(`Fetching articles - page: ${page}, limit: ${limit}, category: ${category || 'all'}`);
 
       const skip = (page - 1) * limit;
 
-      const response = await this.contentfulClient.getEntries({
+      // Build query parameters
+      const queryParams: any = {
         content_type: 'article',
         skip: skip,
         limit: limit,
         order: ['-sys.createdAt'], // Order by creation date descending (newest first)
-      });
+      };
+
+      // Add category filter if provided
+      if (category) {
+        queryParams['fields.category'] = category;
+      }
+
+      const response = await this.contentfulClient.getEntries(queryParams);
 
       const articles: ArticleListingItemDto[] = response.items.map((item) => {
         const fields = item.fields as any;
@@ -87,6 +95,11 @@ export class ContentService {
         };
       });
 
+      // Check if category filter was applied and no articles found
+      if (category && response.total === 0) {
+        throw new NotFoundException(`Category '${category}' not found`);
+      }
+
       const totalPages = Math.ceil(response.total / limit);
 
       return {
@@ -100,6 +113,12 @@ export class ContentService {
       };
     } catch (error) {
       this.logger.error(`Error fetching articles: ${error.message}`, error.stack);
+      
+      // Re-throw NotFoundException as-is
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      
       throw new Error(`Failed to fetch articles: ${error.message}`);
     }
   }

@@ -22,9 +22,10 @@ export class ContentController {
   async getArticles(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('category') category?: string,
   ): Promise<ArticleListingsResponseDto> {
     try {
-      this.logger.log(`GET /content/articles called - page: ${page}, limit: ${limit}`);
+      this.logger.log(`GET /content/articles called - page: ${page}, limit: ${limit}, category: ${category || 'none'}`);
       
       // Validate pagination parameters
       if (page < 1) {
@@ -34,10 +35,16 @@ export class ContentController {
         limit = 20; // Default limit if invalid
       }
 
-      const result = await this.contentService.getAllArticles(page, limit);
+      const result = await this.contentService.getAllArticles(page, limit, category);
       return result;
     } catch (error) {
       this.logger.error(`Error in getArticles: ${error.message}`, error.stack);
+      
+      // Re-throw NotFoundException for category not found
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      
       throw error;
     }
   }
