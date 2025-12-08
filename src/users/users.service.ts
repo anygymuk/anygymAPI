@@ -2180,10 +2180,10 @@ export class UsersService {
         return sum + cost;
       }, 0);
 
-      // Count members by subscription tier
-      const standardMembers = passes.filter(p => p.subscriptionTier === 'Standard').length;
-      const premiumMembers = passes.filter(p => p.subscriptionTier === 'Premium').length;
-      const eliteMembers = passes.filter(p => p.subscriptionTier === 'Elite').length;
+      // Count members by subscription tier (case-insensitive comparison)
+      const standardMembers = passes.filter(p => p.subscriptionTier?.toLowerCase() === 'standard').length;
+      const premiumMembers = passes.filter(p => p.subscriptionTier?.toLowerCase() === 'premium').length;
+      const eliteMembers = passes.filter(p => p.subscriptionTier?.toLowerCase() === 'elite').length;
 
       // Format passes for response
       const formatDate = (date: Date | null): Date | null => {

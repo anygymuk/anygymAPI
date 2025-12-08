@@ -301,6 +301,34 @@ export class AdminController {
     }
   }
 
+  @Get('revenue')
+  async getAdminRevenue(
+    @Headers('auth0_id') auth0Id: string,
+    @Query('from_date') fromDate: string,
+    @Query('to_date') toDate: string,
+    @Query('gym_id') gymId?: string,
+  ): Promise<AdminRevenueResponseDto> {
+    try {
+      this.logger.log(`GET /admin/revenue called with auth0_id: ${auth0Id}, from_date: ${fromDate}, to_date: ${toDate}, gym_id: ${gymId || 'none'}`);
+      
+      // Build filters object from query parameters
+      const filters: GetRevenueDto = {
+        from_date: fromDate,
+        to_date: toDate,
+        gym_id: gymId ? parseInt(gymId, 10) : undefined,
+      };
+      
+      // The Auth0Guard ensures auth0_id is present in headers
+      // The service will verify the auth0_id exists in admin_users table
+      // and return revenue data based on the user's role
+      const result = await this.usersService.findAdminRevenue(auth0Id, filters);
+      return result;
+    } catch (error) {
+      this.logger.error(`Error in getAdminRevenue: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
   @Get('auth0/test')
   async testAuth0Connection(
     @Headers('auth0_id') auth0Id: string,
