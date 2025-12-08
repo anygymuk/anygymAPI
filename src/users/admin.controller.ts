@@ -28,6 +28,8 @@ import { AdminLocationResponseDto } from './dto/admin-location-response.dto';
 import { AdminPassResponseDto } from './dto/admin-pass-response.dto';
 import { AdminPassesPaginatedResponseDto } from './dto/admin-passes-paginated-response.dto';
 import { AdminCheckInResponseDto } from './dto/admin-check-in-response.dto';
+import { GetRevenueDto } from './dto/get-revenue.dto';
+import { AdminRevenueResponseDto } from './dto/admin-revenue-response.dto';
 
 @Controller('admin')
 @UseGuards(Auth0Guard)

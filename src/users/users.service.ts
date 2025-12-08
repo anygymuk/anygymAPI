@@ -26,6 +26,8 @@ import { AdminPassesPaginatedResponseDto } from './dto/admin-passes-paginated-re
 import { AdminCheckInResponseDto } from './dto/admin-check-in-response.dto';
 import { ChainResponseDto } from './dto/chain-response.dto';
 import { Auth0Service } from './services/auth0.service';
+import { GetRevenueDto } from './dto/get-revenue.dto';
+import { AdminRevenueResponseDto, AdminRevenuePassDto } from './dto/admin-revenue-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -2030,6 +2032,205 @@ export class UsersService {
     } catch (error) {
       this.logger.error(`Error in findAllChains: ${error.message}`, error.stack);
       throw new Error(`Failed to retrieve chains: ${error.message}`);
+    }
+  }
+
+  async findAdminRevenue(auth0Id: string, filters: GetRevenueDto): Promise<AdminRevenueResponseDto> {
+    try {
+      this.logger.log(`Looking up admin revenue with auth0_id: ${auth0Id}, from_date: ${filters.from_date}, to_date: ${filters.to_date}, gym_id: ${filters.gym_id || 'none'}`);
+      
+      // Validate required date parameters
+      if (!filters.from_date || !filters.to_date) {
+        throw new BadRequestException('from_date and to_date are required');
+      }
+
+      // Parse and validate dates
+      const fromDate = new Date(filters.from_date);
+      const toDate = new Date(filters.to_date);
+
+      if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+        throw new BadRequestException('Invalid date format for from_date or to_date');
+      }
+
+      if (fromDate > toDate) {
+        throw new BadRequestException('from_date must be before or equal to to_date');
+      }
+
+      // Find the admin user to get their role and gym_chain_id or access_gyms
+      const adminUser = await this.adminUserRepository.findOne({
+        where: { auth0Id },
+      });
+
+      if (!adminUser) {
+        this.logger.warn(`Admin user not found with auth0_id: ${auth0Id}`);
+        throw new ForbiddenException('Access denied: Admin privileges required');
+      }
+
+      this.logger.log(`Admin user found: ${auth0Id}, role: ${adminUser.role}`);
+
+      // Build query for passes with join to gyms
+      let queryBuilder = this.gymPassRepository
+        .createQueryBuilder('pass')
+        .innerJoinAndSelect('pass.gym', 'gym')
+        .select([
+          'pass.id',
+          'pass.userId',
+          'pass.gymId',
+          'gym.name',
+          'pass.passCode',
+          'pass.status',
+          'pass.usedAt',
+          'pass.createdAt',
+          'pass.subscriptionTier',
+          'pass.passCost',
+        ])
+        .where('pass.createdAt >= :fromDate', { fromDate })
+        .andWhere('pass.createdAt <= :toDate', { toDate });
+
+      // Apply role-based filtering
+      if (adminUser.role === 'admin') {
+        // Return all passes where the pass's gym_id is associated with the same gym_chain_id
+        if (adminUser.gymChainId) {
+          queryBuilder = queryBuilder.andWhere('gym.gymChainId = :gymChainId', { 
+            gymChainId: adminUser.gymChainId 
+          });
+          this.logger.log(`Filtering passes for admin with gym_chain_id: ${adminUser.gymChainId}`);
+        } else {
+          this.logger.warn(`Admin user has no gym_chain_id`);
+          // Return empty result
+          return {
+            revenue: {
+              total_passes: 0,
+              total_revenue: 0,
+              standard_members: 0,
+              premium_members: 0,
+              elite_members: 0,
+            },
+            passes: [],
+          };
+        }
+      } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+        // Return all passes where the pass's gym_id is in the user's access_gyms array
+        if (adminUser.accessGyms && adminUser.accessGyms.length > 0) {
+          queryBuilder = queryBuilder.andWhere('pass.gymId IN (:...gymIds)', { 
+            gymIds: adminUser.accessGyms 
+          });
+          this.logger.log(`Filtering passes for ${adminUser.role} with access_gyms: ${adminUser.accessGyms}`);
+        } else {
+          this.logger.warn(`${adminUser.role} user has no access_gyms`);
+          // Return empty result
+          return {
+            revenue: {
+              total_passes: 0,
+              total_revenue: 0,
+              standard_members: 0,
+              premium_members: 0,
+              elite_members: 0,
+            },
+            passes: [],
+          };
+        }
+      } else {
+        this.logger.warn(`Unknown role: ${adminUser.role}`);
+        throw new ForbiddenException('Access denied: Invalid role');
+      }
+
+      // Apply optional gym_id filter
+      if (filters.gym_id) {
+        // First, verify the gym exists and the user has access to it
+        const gym = await this.gymRepository.findOne({
+          where: { id: filters.gym_id },
+        });
+
+        if (!gym) {
+          throw new NotFoundException('Gym not found');
+        }
+
+        // Check permissions based on role
+        if (adminUser.role === 'admin') {
+          // Admin must have matching gym_chain_id
+          if (adminUser.gymChainId !== gym.gymChainId) {
+            this.logger.warn(`Admin user ${auth0Id} attempted to access gym ${filters.gym_id} with mismatched gym_chain_id`);
+            throw new ForbiddenException('You do not have access to this gym');
+          }
+        } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
+          // Gym admin/staff must have gym id in access_gyms array
+          if (!adminUser.accessGyms || !adminUser.accessGyms.includes(filters.gym_id)) {
+            this.logger.warn(`${adminUser.role} user ${auth0Id} attempted to access gym ${filters.gym_id} not in access_gyms`);
+            throw new ForbiddenException('You do not have access to this gym');
+          }
+        }
+
+        // Apply gym_id filter
+        queryBuilder = queryBuilder.andWhere('pass.gymId = :gymId', { gymId: filters.gym_id });
+        this.logger.log(`Filtering passes for gym_id: ${filters.gym_id}`);
+      }
+
+      // Order by created_at descending (newest first)
+      queryBuilder = queryBuilder.orderBy('pass.createdAt', 'DESC');
+
+      // Get all matching passes
+      const passes = await queryBuilder.getMany();
+      this.logger.log(`Found ${passes.length} pass(es) for revenue calculation`);
+
+      // Calculate revenue statistics
+      const totalPasses = passes.length;
+      const totalRevenue = passes.reduce((sum, pass) => {
+        const cost = pass.passCost ? parseFloat(pass.passCost.toString()) : 0;
+        return sum + cost;
+      }, 0);
+
+      // Count members by subscription tier
+      const standardMembers = passes.filter(p => p.subscriptionTier === 'Standard').length;
+      const premiumMembers = passes.filter(p => p.subscriptionTier === 'Premium').length;
+      const eliteMembers = passes.filter(p => p.subscriptionTier === 'Elite').length;
+
+      // Format passes for response
+      const formatDate = (date: Date | null): Date | null => {
+        if (!date) return null;
+        if (date instanceof Date) {
+          return date;
+        }
+        if (typeof date === 'string') {
+          return new Date(date);
+        }
+        return null;
+      };
+
+      const passesDto: AdminRevenuePassDto[] = passes.map((pass) => ({
+        id: pass.id,
+        user_id: pass.userId,
+        gym_id: pass.gymId,
+        gym_name: pass.gym?.name || '',
+        pass_code: pass.passCode,
+        status: pass.status,
+        used_at: formatDate(pass.usedAt),
+        created_at: pass.createdAt,
+        subscription_tier: pass.subscriptionTier || null,
+        pass_cost: pass.passCost ? parseFloat(pass.passCost.toString()) : null,
+      }));
+
+      return {
+        revenue: {
+          total_passes: totalPasses,
+          total_revenue: totalRevenue,
+          standard_members: standardMembers,
+          premium_members: premiumMembers,
+          elite_members: eliteMembers,
+        },
+        passes: passesDto,
+      };
+    } catch (error) {
+      this.logger.error(`Error in findAdminRevenue: ${error.message}`, error.stack);
+      // Re-throw known exceptions as-is
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new Error(`Failed to fetch admin revenue: ${error.message}`);
     }
   }
 }
