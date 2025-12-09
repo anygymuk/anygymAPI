@@ -1268,6 +1268,7 @@ export class UsersService {
           }
           
           // Create the event within the transaction
+          // Explicitly set createdAt since database defaults may not work in transactions
           const newEvent = transactionalEntityManager.create(Event, {
             userId: memberAuth0Id,
             adminUser: adminAuth0Id,
@@ -1275,7 +1276,7 @@ export class UsersService {
             gymChainId: adminUser.gymChainId ? adminUser.gymChainId.toString() : null,
             eventType: 'personal_data',
             eventDescription: eventDescription,
-            // createdAt will be set by database default
+            createdAt: new Date(),
           });
           
           await transactionalEntityManager.save(Event, newEvent);
