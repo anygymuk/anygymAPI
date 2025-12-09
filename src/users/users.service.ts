@@ -1237,7 +1237,7 @@ export class UsersService {
         passes: passesDto,
       };
 
-      // Create event log
+      // Create event log (prevent duplicates by checking for recent identical events)
       try {
         const now = new Date();
         const adminName = adminUser.name || 'Unknown';
@@ -1245,6 +1245,22 @@ export class UsersService {
         const memberEmail = memberUser.email || 'Unknown';
         
         const eventDescription = `User ${adminName} ${adminEmail}, viewed personal data for member ${memberEmail}`;
+        
+        // Check if a similar event was created in the last 5 seconds to prevent duplicates
+        const fiveSecondsAgo = new Date(now.getTime() - 5000);
+        const existingEvent = await this.eventRepository
+          .createQueryBuilder('event')
+          .where('event.userId = :userId', { userId: memberAuth0Id })
+          .andWhere('event.adminUser = :adminUser', { adminUser: adminAuth0Id })
+          .andWhere('event.eventType = :eventType', { eventType: 'personal_data' })
+          .andWhere('event.createdAt >= :fiveSecondsAgo', { fiveSecondsAgo })
+          .orderBy('event.createdAt', 'DESC')
+          .getOne();
+        
+        if (existingEvent) {
+          this.logger.log(`Duplicate event detected, skipping creation. Last event created at: ${existingEvent.createdAt}`);
+          return response;
+        }
         
         const newEvent = this.eventRepository.create({
           userId: memberAuth0Id,
