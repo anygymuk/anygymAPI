@@ -1600,6 +1600,9 @@ export class UsersService {
         return [];
       }
 
+      // Order by name alphabetically
+      queryBuilder = queryBuilder.orderBy('gym.name', 'ASC');
+
       const gyms = await queryBuilder.getMany();
       this.logger.log(`Found ${gyms.length} locations for admin user ${auth0Id}`);
 
