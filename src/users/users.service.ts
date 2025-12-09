@@ -2172,21 +2172,30 @@ export class UsersService {
       // Order by created_at descending (newest first)
       queryBuilder = queryBuilder.orderBy('pass.createdAt', 'DESC');
 
-      // Get all matching passes
-      const passes = await queryBuilder.getMany();
-      this.logger.log(`Found ${passes.length} pass(es) for revenue calculation`);
+      // Get total count before pagination
+      const totalPasses = await queryBuilder.getCount();
+      this.logger.log(`Found ${totalPasses} pass(es) for revenue calculation`);
 
-      // Calculate revenue statistics
-      const totalPasses = passes.length;
-      const totalRevenue = passes.reduce((sum, pass) => {
+      // Get all passes for revenue calculations (before pagination)
+      const allPasses = await queryBuilder.getMany();
+
+      // Calculate revenue statistics from all passes
+      const totalRevenue = allPasses.reduce((sum, pass) => {
         const cost = pass.passCost ? parseFloat(pass.passCost.toString()) : 0;
         return sum + cost;
       }, 0);
 
-      // Count members by subscription tier (case-insensitive comparison)
-      const standardMembers = passes.filter(p => p.subscriptionTier?.toLowerCase() === 'standard').length;
-      const premiumMembers = passes.filter(p => p.subscriptionTier?.toLowerCase() === 'premium').length;
-      const eliteMembers = passes.filter(p => p.subscriptionTier?.toLowerCase() === 'elite').length;
+      // Count members by subscription tier (case-insensitive comparison) from all passes
+      const standardMembers = allPasses.filter(p => p.subscriptionTier?.toLowerCase() === 'standard').length;
+      const premiumMembers = allPasses.filter(p => p.subscriptionTier?.toLowerCase() === 'premium').length;
+      const eliteMembers = allPasses.filter(p => p.subscriptionTier?.toLowerCase() === 'elite').length;
+
+      // Paginate passes (20 per page)
+      const page = filters.page || 1;
+      const pageSize = 20;
+      const offset = (page - 1) * pageSize;
+      const paginatedPasses = allPasses.slice(offset, offset + pageSize);
+      this.logger.log(`Returning ${paginatedPasses.length} passes for page ${page} (out of ${totalPasses} total)`);
 
       // Format passes for response
       const formatDate = (date: Date | null): Date | null => {
@@ -2200,7 +2209,7 @@ export class UsersService {
         return null;
       };
 
-      const passesDto: AdminRevenuePassDto[] = passes.map((pass) => ({
+      const passesDto: AdminRevenuePassDto[] = paginatedPasses.map((pass) => ({
         id: pass.id,
         user_id: pass.userId,
         gym_id: pass.gymId,
@@ -2213,6 +2222,11 @@ export class UsersService {
         pass_cost: pass.passCost ? parseFloat(pass.passCost.toString()) : null,
       }));
 
+      // Calculate result_set string
+      const startResult = totalPasses > 0 ? offset + 1 : 0;
+      const endResult = Math.min(offset + pageSize, totalPasses);
+      const resultSet = `${startResult} to ${endResult}`;
+
       return {
         revenue: {
           total_passes: totalPasses,
@@ -2222,6 +2236,11 @@ export class UsersService {
           elite_members: eliteMembers,
         },
         passes: passesDto,
+        pagination: {
+          total_results: totalPasses,
+          page: page,
+          result_set: resultSet,
+        },
       };
     } catch (error) {
       this.logger.error(`Error in findAdminRevenue: ${error.message}`, error.stack);

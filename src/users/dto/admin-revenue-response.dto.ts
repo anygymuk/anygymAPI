@@ -20,5 +20,10 @@ export class AdminRevenueResponseDto {
     elite_members: number;
   };
   passes: AdminRevenuePassDto[];
+  pagination: {
+    total_results: number;
+    page: number;
+    result_set: string;
+  };
 }
 

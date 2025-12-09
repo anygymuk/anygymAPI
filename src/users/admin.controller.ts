@@ -307,15 +307,17 @@ export class AdminController {
     @Query('from_date') fromDate: string,
     @Query('to_date') toDate: string,
     @Query('gym_id') gymId?: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
   ): Promise<AdminRevenueResponseDto> {
     try {
-      this.logger.log(`GET /admin/revenue called with auth0_id: ${auth0Id}, from_date: ${fromDate}, to_date: ${toDate}, gym_id: ${gymId || 'none'}`);
+      this.logger.log(`GET /admin/revenue called with auth0_id: ${auth0Id}, from_date: ${fromDate}, to_date: ${toDate}, gym_id: ${gymId || 'none'}, page: ${page}`);
       
       // Build filters object from query parameters
       const filters: GetRevenueDto = {
         from_date: fromDate,
         to_date: toDate,
         gym_id: gymId ? parseInt(gymId, 10) : undefined,
+        page: page,
       };
       
       // The Auth0Guard ensures auth0_id is present in headers
