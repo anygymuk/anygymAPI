@@ -1237,46 +1237,58 @@ export class UsersService {
         passes: passesDto,
       };
 
-      // Create event log (prevent duplicates by checking for recent identical events)
+      // Create event log (prevent duplicates using database transaction with row-level locking)
       try {
-        const now = new Date();
         const adminName = adminUser.name || 'Unknown';
         const adminEmail = adminUser.email || 'Unknown';
         const memberEmail = memberUser.email || 'Unknown';
         
         const eventDescription = `User ${adminName} ${adminEmail}, viewed personal data for member ${memberEmail}`;
         
-        // Check if a similar event was created in the last 5 seconds to prevent duplicates
-        const fiveSecondsAgo = new Date(now.getTime() - 5000);
-        const existingEvent = await this.eventRepository
-          .createQueryBuilder('event')
-          .where('event.userId = :userId', { userId: memberAuth0Id })
-          .andWhere('event.adminUser = :adminUser', { adminUser: adminAuth0Id })
-          .andWhere('event.eventType = :eventType', { eventType: 'personal_data' })
-          .andWhere('event.createdAt >= :fiveSecondsAgo', { fiveSecondsAgo })
-          .orderBy('event.createdAt', 'DESC')
-          .getOne();
-        
-        if (existingEvent) {
-          this.logger.log(`Duplicate event detected, skipping creation. Last event created at: ${existingEvent.createdAt}`);
-          return response;
-        }
-        
-        const newEvent = this.eventRepository.create({
-          userId: memberAuth0Id,
-          adminUser: adminAuth0Id,
-          gymId: null,
-          gymChainId: adminUser.gymChainId ? adminUser.gymChainId.toString() : null,
-          eventType: 'personal_data',
-          eventDescription: eventDescription,
-          createdAt: now,
+        // Use a transaction with row-level locking to prevent race conditions
+        await this.dataSource.transaction(async (transactionalEntityManager) => {
+          // Check if a similar event was created in the last 30 seconds with row-level lock
+          const thirtySecondsAgo = new Date(Date.now() - 30000);
+          const existingEvent = await transactionalEntityManager
+            .createQueryBuilder(Event, 'event')
+            .setLock('pessimistic_write')
+            .where('event.userId = :userId', { userId: memberAuth0Id })
+            .andWhere('event.adminUser = :adminUser', { adminUser: adminAuth0Id })
+            .andWhere('event.eventType = :eventType', { eventType: 'personal_data' })
+            .andWhere('event.eventDescription = :eventDescription', { eventDescription })
+            .andWhere('event.createdAt >= :thirtySecondsAgo', { 
+              thirtySecondsAgo: thirtySecondsAgo 
+            })
+            .orderBy('event.createdAt', 'DESC')
+            .getOne();
+          
+          if (existingEvent) {
+            this.logger.log(`Duplicate event detected, skipping creation. Last event created at: ${existingEvent.createdAt} (ID: ${existingEvent.id})`);
+            return;
+          }
+          
+          // Create the event within the transaction
+          const newEvent = transactionalEntityManager.create(Event, {
+            userId: memberAuth0Id,
+            adminUser: adminAuth0Id,
+            gymId: null,
+            gymChainId: adminUser.gymChainId ? adminUser.gymChainId.toString() : null,
+            eventType: 'personal_data',
+            eventDescription: eventDescription,
+            // createdAt will be set by database default
+          });
+          
+          await transactionalEntityManager.save(Event, newEvent);
+          this.logger.log(`Event record created successfully for admin member view (ID: ${newEvent.id})`);
         });
-        
-        await this.eventRepository.save(newEvent);
-        this.logger.log(`Event record created successfully for admin member view`);
       } catch (eventError) {
         // Log error but don't fail the request if event creation fails
-        this.logger.error(`Failed to create event record: ${eventError.message}`, eventError.stack);
+        // If it's a duplicate key error, that's okay - it means another request already created it
+        if (eventError.code === '23505') { // PostgreSQL unique violation
+          this.logger.log(`Event creation skipped due to unique constraint violation (duplicate prevented)`);
+        } else {
+          this.logger.error(`Failed to create event record: ${eventError.message}`, eventError.stack);
+        }
       }
 
       return response;

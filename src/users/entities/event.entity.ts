@@ -23,7 +23,7 @@ export class Event {
   @Column({ name: 'event_description', type: 'text' })
   eventDescription: string;
 
-  @Column({ name: 'created_at', type: 'date' })
+  @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 }
 
