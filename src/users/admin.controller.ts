@@ -306,8 +306,8 @@ export class AdminController {
     @Headers('auth0_id') auth0Id: string,
     @Query('from_date') fromDate: string,
     @Query('to_date') toDate: string,
-    @Query('gym_id') gymId?: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('gym_id') gymId?: string,
   ): Promise<AdminRevenueResponseDto> {
     try {
       this.logger.log(`GET /admin/revenue called with auth0_id: ${auth0Id}, from_date: ${fromDate}, to_date: ${toDate}, gym_id: ${gymId || 'none'}, page: ${page}`);

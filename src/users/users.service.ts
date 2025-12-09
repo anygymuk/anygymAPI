@@ -2101,6 +2101,7 @@ export class UsersService {
         } else {
           this.logger.warn(`Admin user has no gym_chain_id`);
           // Return empty result
+          const page = filters.page || 1;
           return {
             revenue: {
               total_passes: 0,
@@ -2110,6 +2111,11 @@ export class UsersService {
               elite_members: 0,
             },
             passes: [],
+            pagination: {
+              total_results: 0,
+              page: page,
+              result_set: '0 to 0',
+            },
           };
         }
       } else if (adminUser.role === 'gym_admin' || adminUser.role === 'gym_staff') {
@@ -2122,6 +2128,7 @@ export class UsersService {
         } else {
           this.logger.warn(`${adminUser.role} user has no access_gyms`);
           // Return empty result
+          const page = filters.page || 1;
           return {
             revenue: {
               total_passes: 0,
@@ -2131,6 +2138,11 @@ export class UsersService {
               elite_members: 0,
             },
             passes: [],
+            pagination: {
+              total_results: 0,
+              page: page,
+              result_set: '0 to 0',
+            },
           };
         }
       } else {
