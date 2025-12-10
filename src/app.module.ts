@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { GymsModule } from './gyms/gyms.module';
 import { UsersModule } from './users/users.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PassesModule } from './passes/passes.module';
+import { PassesCronModule } from './passes/passes-cron.module';
 import { StripeModule } from './stripe/stripe.module';
 import { ContentModule } from './content/content.module';
 import { Gym } from './gyms/entities/gym.entity';
@@ -23,6 +25,7 @@ import { PassPricing } from './passes/entities/pass-pricing.entity';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
@@ -53,6 +56,7 @@ import { PassPricing } from './passes/entities/pass-pricing.entity';
     UsersModule,
     SubscriptionsModule,
     PassesModule,
+    PassesCronModule,
     StripeModule,
     ContentModule,
   ],
