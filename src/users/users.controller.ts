@@ -67,6 +67,8 @@ export class UsersController {
         emergencyContactName?: string;
         emergencyContactNumber?: string;
         onboardingCompleted?: boolean;
+        passNotificationConsent?: boolean;
+        marketingConsent?: boolean;
       } = {};
 
       if (updateUserDto.full_name !== undefined) {
@@ -95,6 +97,12 @@ export class UsersController {
       }
       if (updateUserDto.onboarding_completed !== undefined) {
         updateData.onboardingCompleted = updateUserDto.onboarding_completed;
+      }
+      if (updateUserDto.pass_notification_consent !== undefined) {
+        updateData.passNotificationConsent = updateUserDto.pass_notification_consent;
+      }
+      if (updateUserDto.marketing_consent !== undefined) {
+        updateData.marketingConsent = updateUserDto.marketing_consent;
       }
 
       // Update the user - this ensures users can only update their own data

@@ -36,5 +36,13 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   onboarding_completed?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  pass_notification_consent?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  marketing_consent?: boolean;
 }
 

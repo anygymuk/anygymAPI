@@ -207,6 +207,8 @@ export class UsersService {
     emergencyContactName?: string;
     emergencyContactNumber?: string;
     onboardingCompleted?: boolean;
+    passNotificationConsent?: boolean;
+    marketingConsent?: boolean;
   }): Promise<{ message: string }> {
     try {
       this.logger.log(`Updating user with auth0_id: ${auth0Id}`);
@@ -259,6 +261,14 @@ export class UsersService {
       }
       if (updateData.onboardingCompleted !== undefined) {
         updateObject.onboardingCompleted = updateData.onboardingCompleted;
+        hasUpdates = true;
+      }
+      if (updateData.passNotificationConsent !== undefined) {
+        updateObject.passNotificationConsent = updateData.passNotificationConsent;
+        hasUpdates = true;
+      }
+      if (updateData.marketingConsent !== undefined) {
+        updateObject.marketingConsent = updateData.marketingConsent;
         hasUpdates = true;
       }
 
