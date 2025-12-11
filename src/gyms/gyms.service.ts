@@ -1,10 +1,12 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Gym } from './entities/gym.entity';
 import { Rating } from './entities/rating.entity';
+import { User } from '../users/entities/user.entity';
 import { GetGymsDto } from './dto/get-gyms.dto';
 import { GymDetailResponseDto } from './dto/gym-detail-response.dto';
+import { SetRatingDto } from './dto/set-rating.dto';
 
 @Injectable()
 export class GymsService {
@@ -43,6 +45,8 @@ export class GymsService {
     private gymRepository: Repository<Gym>,
     @InjectRepository(Rating)
     private ratingRepository: Repository<Rating>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
   ) {}
 
   async findAll(filters: GetGymsDto) {
@@ -249,6 +253,77 @@ export class GymsService {
         throw error;
       }
       throw new Error(`Failed to fetch gym: ${error.message}`);
+    }
+  }
+
+  async setRating(setRatingDto: SetRatingDto): Promise<{ message: string }> {
+    try {
+      this.logger.log(
+        `Setting rating for user_id: ${setRatingDto.user_id}, gym_id: ${setRatingDto.gym_id}, rating: ${setRatingDto.rating}`,
+      );
+
+      // Validate user exists
+      const user = await this.userRepository.findOne({
+        where: { auth0Id: setRatingDto.user_id },
+      });
+
+      if (!user) {
+        this.logger.warn(`User not found with auth0_id: ${setRatingDto.user_id}`);
+        throw new NotFoundException(`User with auth0_id '${setRatingDto.user_id}' not found`);
+      }
+
+      // Validate gym exists
+      const gym = await this.gymRepository.findOne({
+        where: { id: setRatingDto.gym_id },
+      });
+
+      if (!gym) {
+        this.logger.warn(`Gym not found with id: ${setRatingDto.gym_id}`);
+        throw new NotFoundException(`Gym with id '${setRatingDto.gym_id}' not found`);
+      }
+
+      // Check if user already has a rating for this gym
+      const existingRating = await this.ratingRepository.findOne({
+        where: {
+          userId: setRatingDto.user_id,
+          gymId: setRatingDto.gym_id,
+        },
+      });
+
+      if (existingRating) {
+        this.logger.warn(
+          `User ${setRatingDto.user_id} already has a rating for gym ${setRatingDto.gym_id}`,
+        );
+        throw new ConflictException(
+          `User has already provided a rating for the specified gym`,
+        );
+      }
+
+      // Create new rating
+      const newRating = this.ratingRepository.create({
+        userId: setRatingDto.user_id,
+        gymId: setRatingDto.gym_id,
+        rating: setRatingDto.rating,
+        createdAt: new Date(),
+      });
+
+      await this.ratingRepository.save(newRating);
+      this.logger.log(
+        `Successfully created rating with id: ${newRating.id} for user ${setRatingDto.user_id} and gym ${setRatingDto.gym_id}`,
+      );
+
+      return {
+        message: 'Rating created successfully',
+      };
+    } catch (error) {
+      this.logger.error(`Error in setRating: ${error.message}`, error.stack);
+      if (
+        error instanceof NotFoundException ||
+        error instanceof ConflictException
+      ) {
+        throw error;
+      }
+      throw new Error(`Failed to set rating: ${error.message}`);
     }
   }
 }

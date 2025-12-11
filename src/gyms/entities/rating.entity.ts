@@ -1,10 +1,18 @@
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { Gym } from './gym.entity';
+import { User } from '../../users/entities/user.entity';
 
 @Entity('ratings')
 export class Rating {
   @PrimaryGeneratedColumn()
   id: number;
+
+  @Column({ name: 'user_id' })
+  userId: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'user_id', referencedColumnName: 'auth0Id' })
+  user: User;
 
   @Column({ name: 'gym_id' })
   gymId: number;
