@@ -12,5 +12,7 @@ export class UserResponseDto {
   emergency_contact_name: string | null;
   emergency_contact_number: string | null;
   membership: string | null;
+  pass_notification_consent: boolean | null;
+  marketing_consent: boolean | null;
 }
 

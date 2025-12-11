@@ -119,6 +119,8 @@ export class UsersService {
             stripeCustomerId: rawData.stripe_customer_id,
             emergencyContactName: rawData.emergency_contact_name,
             emergencyContactNumber: rawData.emergency_contact_number,
+            passNotificationConsent: rawData.pass_notification_consent ?? null,
+            marketingConsent: rawData.marketing_consent ?? null,
           });
         }
       }
@@ -176,6 +178,8 @@ export class UsersService {
         emergency_contact_name: user.emergencyContactName || null,
         emergency_contact_number: user.emergencyContactNumber || null,
         membership: membership,
+        pass_notification_consent: user.passNotificationConsent ?? null,
+        marketing_consent: user.marketingConsent ?? null,
       };
       return this.removeEmptyValues(response) as UserResponseDto;
     } catch (error) {

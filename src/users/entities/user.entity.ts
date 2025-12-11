@@ -37,5 +37,11 @@ export class User {
 
   @Column({ name: 'emergency_contact_number', nullable: true })
   emergencyContactNumber: string;
+
+  @Column({ name: 'pass_notification_consent', nullable: true })
+  passNotificationConsent: boolean;
+
+  @Column({ name: 'marketing_consent', nullable: true })
+  marketingConsent: boolean;
 }
 
