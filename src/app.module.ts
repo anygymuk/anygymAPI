@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -18,6 +19,9 @@ import { Event } from './users/entities/event.entity';
 import { Subscription } from './subscriptions/entities/subscription.entity';
 import { GymPass } from './passes/entities/gym-pass.entity';
 import { PassPricing } from './passes/entities/pass-pricing.entity';
+
+const isPassExpiryCronEnabled =
+  process.env.PASS_EXPIRY_CRON_ENABLED !== 'false';
 
 @Module({
   imports: [
@@ -56,7 +60,7 @@ import { PassPricing } from './passes/entities/pass-pricing.entity';
     UsersModule,
     SubscriptionsModule,
     PassesModule,
-    PassesCronModule,
+    ...(isPassExpiryCronEnabled ? [PassesCronModule] : []),
     StripeModule,
     ContentModule,
   ],
