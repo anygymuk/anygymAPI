@@ -34,6 +34,7 @@ API for the anygym frontend to communicate with the database, Stripe, Auth0, and
    CONTENTFUL_SPACE_ID=your_contentful_space_id
    CONTENTFUL_ACCESS_TOKEN=your_contentful_access_token
    CONTENTFUL_ENVIRONMENT=master  # Optional, defaults to 'master'
+   PASS_EXPIRY_CRON_ENABLED=true  # Optional, defaults to true
    ```
 
 ### Running the Application
@@ -107,6 +108,7 @@ GET /gyms?required_tier=premium&amenities=pool&gym_chain_id=1
      - `CONTENTFUL_SPACE_ID`: Your Contentful space ID
      - `CONTENTFUL_ACCESS_TOKEN`: Your Contentful Content Delivery API access token
      - `CONTENTFUL_ENVIRONMENT`: (Optional) Contentful environment, defaults to 'master'
+     - `PASS_EXPIRY_CRON_ENABLED`: (Optional) Set to `false` to disable the every-minute pass expiry cron job
 
 ## Project Structure
 

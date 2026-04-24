@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,10 +12,22 @@ export class PassesCronService {
   constructor(
     @InjectRepository(GymPass)
     private gymPassRepository: Repository<GymPass>,
+    private configService: ConfigService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async expirePasses() {
+    const passExpiryCronEnabled =
+      this.configService.get<string>('PASS_EXPIRY_CRON_ENABLED', 'true') ===
+      'true';
+
+    if (!passExpiryCronEnabled) {
+      this.logger.debug(
+        'Skipping pass expiry cron. PASS_EXPIRY_CRON_ENABLED is false',
+      );
+      return;
+    }
+
     this.logger.log('Running cron job to expire passes...');
 
     try {
