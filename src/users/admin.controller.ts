@@ -13,6 +13,7 @@ import {
   DefaultValuePipe,
   BadRequestException,
 } from '@nestjs/common';
+import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { Auth0Guard } from './guards/auth0.guard';
 import { AdminUserResponseDto } from './dto/admin-user-response.dto';
@@ -31,6 +32,8 @@ import { AdminCheckInResponseDto } from './dto/admin-check-in-response.dto';
 import { GetRevenueDto } from './dto/get-revenue.dto';
 import { AdminRevenueResponseDto } from './dto/admin-revenue-response.dto';
 
+@ApiTags('admin')
+@ApiSecurity('auth0_id')
 @Controller('admin')
 @UseGuards(Auth0Guard)
 export class AdminController {

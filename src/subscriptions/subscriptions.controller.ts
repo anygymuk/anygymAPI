@@ -8,11 +8,14 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
+import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { SubscriptionsService } from './subscriptions.service';
 import { Auth0Guard } from '../users/guards/auth0.guard';
 import { SubscriptionResponseDto } from './dto/subscription-response.dto';
 import { GetSubscriptionDto } from './dto/get-subscription.dto';
 
+@ApiTags('subscriptions')
+@ApiSecurity('auth0_id')
 @Controller('user/subscription')
 @UseGuards(Auth0Guard)
 export class SubscriptionsController {

@@ -7,10 +7,12 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { StripeService } from './stripe.service';
 
+@ApiTags('stripe')
 @Controller('stripe')
 export class StripeController {
   private readonly logger = new Logger(StripeController.name);
@@ -25,6 +27,16 @@ export class StripeController {
 
   @Post('checkout')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Stripe Checkout webhook',
+    description:
+      'Raw JSON body (Stripe-signed). Not intended for interactive Swagger calls.',
+  })
+  @ApiHeader({
+    name: 'stripe-signature',
+    required: true,
+    description: 'Stripe webhook signature',
+  })
   async handleWebhook(@Req() req: Request, @Res() res: Response) {
     const sig = req.headers['stripe-signature'];
     const webhookSecret = process.env.STRIPE_CHECKOUT_WEBHOOK;
@@ -77,6 +89,16 @@ export class StripeController {
 
   @Post('updates')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Stripe subscription updates webhook',
+    description:
+      'Raw JSON body (Stripe-signed). Not intended for interactive Swagger calls.',
+  })
+  @ApiHeader({
+    name: 'stripe-signature',
+    required: true,
+    description: 'Stripe webhook signature',
+  })
   async handleUpdatesWebhook(@Req() req: Request, @Res() res: Response) {
     const sig = req.headers['stripe-signature'];
     const webhookSecret = process.env.STRIPE_UPDATES_WEBHOOK || process.env.STRIPE_CHECKOUT_WEBHOOK;

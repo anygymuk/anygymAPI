@@ -7,7 +7,16 @@
     "webpack": false,
     "tsConfigPath": "tsconfig.json",
     "assets": [],
-    "watchAssets": false
+    "watchAssets": false,
+    "plugins": [
+      {
+        "name": "@nestjs/swagger",
+        "options": {
+          "classValidatorShim": true,
+          "introspectComments": true
+        }
+      }
+    ]
   }
 }
 

@@ -1,8 +1,10 @@
 import { Controller, Get, Param, Query, Logger, ParseIntPipe } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { GymsService } from './gyms.service';
 import { GetGymsDto } from './dto/get-gyms.dto';
 import { GymDetailResponseDto } from './dto/gym-detail-response.dto';
 
+@ApiTags('gyms')
 @Controller('gyms')
 export class GymsController {
   private readonly logger = new Logger(GymsController.name);

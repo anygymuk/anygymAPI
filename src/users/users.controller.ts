@@ -9,12 +9,15 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
+import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { Auth0Guard } from './guards/auth0.guard';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PassResponseDto } from '../passes/dto/pass-response.dto';
 
+@ApiTags('user')
+@ApiSecurity('auth0_id')
 @Controller('user')
 @UseGuards(Auth0Guard)
 export class UsersController {

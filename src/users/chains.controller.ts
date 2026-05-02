@@ -5,10 +5,13 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
+import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { Auth0Guard } from './guards/auth0.guard';
 import { ChainResponseDto } from './dto/chain-response.dto';
 
+@ApiTags('chains')
+@ApiSecurity('auth0_id')
 @Controller('chains')
 @UseGuards(Auth0Guard)
 export class ChainsController {

@@ -1,7 +1,9 @@
 import { Controller, Get, Query, Logger, HttpCode, HttpStatus, ParseIntPipe, BadRequestException } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { GymsService } from './gyms.service';
 import { SetRatingDto } from './dto/set-rating.dto';
 
+@ApiTags('rating')
 @Controller('rating')
 export class RatingController {
   private readonly logger = new Logger(RatingController.name);

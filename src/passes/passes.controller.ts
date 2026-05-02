@@ -8,6 +8,7 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
+import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { PassesService } from './passes.service';
 import { Auth0Guard } from '../users/guards/auth0.guard';
 import { PassResponseDto } from './dto/pass-response.dto';
@@ -15,6 +16,8 @@ import { GetPassesDto } from './dto/get-passes.dto';
 import { GeneratePassDto } from './dto/generate-pass.dto';
 import { PassesWithSubscriptionResponseDto } from './dto/passes-with-subscription-response.dto';
 
+@ApiTags('passes')
+@ApiSecurity('auth0_id')
 @Controller()
 @UseGuards(Auth0Guard)
 export class PassesController {
@@ -43,10 +46,16 @@ export class PassesController {
           `Found ${unauthorizedPasses.length} pass(es) that don't match auth0_id: ${auth0Id}`,
         );
         // Filter out any unauthorized passes as an extra security measure
+        const active_passes = result.active_passes.filter(pass => pass.user_id === auth0Id);
+        const pass_history = result.pass_history.filter(pass => pass.user_id === auth0Id);
         return {
           subscription: result.subscription,
-          active_passes: result.active_passes.filter(pass => pass.user_id === auth0Id),
-          pass_history: result.pass_history.filter(pass => pass.user_id === auth0Id),
+          active_passes,
+          pass_history,
+          recent_gyms: this.passesService.recentGymsFromActiveAndHistory(
+            active_passes,
+            pass_history,
+          ),
         };
       }
 

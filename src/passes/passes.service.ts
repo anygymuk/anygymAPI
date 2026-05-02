@@ -5,7 +5,11 @@ import { GymPass } from './entities/gym-pass.entity';
 import { PassResponseDto } from './dto/pass-response.dto';
 import { GetPassesDto } from './dto/get-passes.dto';
 import { GeneratePassDto } from './dto/generate-pass.dto';
-import { PassesWithSubscriptionResponseDto, SubscriptionSummaryDto } from './dto/passes-with-subscription-response.dto';
+import {
+  PassesWithSubscriptionResponseDto,
+  RecentGymDto,
+  SubscriptionSummaryDto,
+} from './dto/passes-with-subscription-response.dto';
 import { Gym } from '../gyms/entities/gym.entity';
 import { PassPricing } from './entities/pass-pricing.entity';
 import { Subscription } from '../subscriptions/entities/subscription.entity';
@@ -142,6 +146,47 @@ export class PassesService {
    * Validates if subscription tier allows access to gym tier
    * standard < premium < elite
    */
+  /**
+   * From passes ordered newest-first, collect up to five distinct gyms by first appearance.
+   */
+  private buildRecentGymsFromPasses(passesOrderedNewestFirst: PassResponseDto[]): RecentGymDto[] {
+    const recent: RecentGymDto[] = [];
+    const seenGymIds = new Set<number>();
+
+    for (const pass of passesOrderedNewestFirst) {
+      if (recent.length >= 5) {
+        break;
+      }
+      const gymId = pass.gym_id;
+      if (gymId == null || seenGymIds.has(gymId)) {
+        continue;
+      }
+      seenGymIds.add(gymId);
+      recent.push({
+        gym_id: gymId,
+        gym_name: pass.gym_name ?? '',
+        gym_chain_id: pass.gym_chain_id ?? 0,
+        gym_chain_name: pass.gym_chain_name ?? '',
+        gym_chain_logo: pass.gym_chain_logo ?? '',
+      });
+    }
+
+    return recent;
+  }
+
+  /**
+   * Builds recent_gyms from active + history partitions (globally sorted by pass created_at desc).
+   */
+  recentGymsFromActiveAndHistory(
+    activePasses: PassResponseDto[],
+    passHistory: PassResponseDto[],
+  ): RecentGymDto[] {
+    const merged = [...activePasses, ...passHistory].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+    return this.buildRecentGymsFromPasses(merged);
+  }
+
   private validateTierAccess(subscriptionTier: string, gymRequiredTier: string): boolean {
     const tierLevels: { [key: string]: number } = {
       standard: 1,
@@ -353,6 +398,8 @@ export class PassesService {
         return validUntilDate <= now;
       });
 
+      const recentGyms = this.recentGymsFromActiveAndHistory(activePasses, passHistory);
+
       // Fetch active subscription
       let subscriptionSummary: SubscriptionSummaryDto | null = null;
       try {
@@ -386,6 +433,7 @@ export class PassesService {
         subscription: subscriptionSummary,
         active_passes: activePasses,
         pass_history: passHistory,
+        recent_gyms: recentGyms,
       };
     } catch (error) {
       this.logger.error(

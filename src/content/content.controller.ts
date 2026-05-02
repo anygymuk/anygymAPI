@@ -8,10 +8,12 @@ import {
   DefaultValuePipe,
   NotFoundException,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { ContentService } from './content.service';
 import { ArticleListingsResponseDto } from './dto/article-listings-response.dto';
 import { ArticleResponseDto } from './dto/article-response.dto';
 
+@ApiTags('content')
 @Controller('content')
 export class ContentController {
   private readonly logger = new Logger(ContentController.name);
