@@ -78,6 +78,8 @@ export class PassesService {
           'gym.gymChainId',
           'gymChain.name',
           'gymChain.logo',
+          'gym.latitude',
+          'gym.longitude',
           'pass.passCode',
           'pass.status',
           'pass.validUntil',
@@ -113,6 +115,14 @@ export class PassesService {
         return null;
       };
 
+      const toCoord = (value: number | string | null | undefined): number | null => {
+        if (value === null || value === undefined) {
+          return null;
+        }
+        const n = typeof value === 'number' ? value : parseFloat(String(value));
+        return Number.isFinite(n) ? n : null;
+      };
+
       return passes.map((pass) => {
         const response = {
           id: pass.id,
@@ -122,6 +132,8 @@ export class PassesService {
           gym_chain_id: pass.gym?.gymChainId || null,
           gym_chain_name: pass.gym?.gymChain?.name || null,
           gym_chain_logo: pass.gym?.gymChain?.logo || null,
+          gym_latitude: toCoord(pass.gym?.latitude),
+          gym_longitude: toCoord(pass.gym?.longitude),
           pass_code: pass.passCode,
           status: pass.status,
           valid_until: formatDate(pass.validUntil),

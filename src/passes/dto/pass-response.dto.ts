@@ -6,6 +6,8 @@ export class PassResponseDto {
   gym_chain_id: number | null;
   gym_chain_name: string | null;
   gym_chain_logo: string | null;
+  gym_latitude: number | null;
+  gym_longitude: number | null;
   pass_code: string;
   status: string;
   valid_until: string | null;
