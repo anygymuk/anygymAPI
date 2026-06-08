@@ -35,7 +35,22 @@ API for the anygym frontend to communicate with the database, Stripe, Auth0, and
    CONTENTFUL_ACCESS_TOKEN=your_contentful_access_token
    CONTENTFUL_ENVIRONMENT=master  # Optional, defaults to 'master'
    PASS_EXPIRY_CRON_ENABLED=true  # Optional, defaults to true
+
+   # SendGrid (optional — form emails skipped when unset)
+   SENDGRID_API_KEY=your_sendgrid_api_key
+   SENDGRID_FROM_EMAIL=hello@any-gym.com
+   FORM_NOTIFICATION_EMAIL=team@any-gym.com
    ```
+
+### Database migrations
+
+Run the SQL files in `migrations/` against your PostgreSQL database before using the leads endpoints:
+
+```bash
+psql "$DATABASE_URL" -f migrations/001_create_newsletter_subscriptions.sql
+psql "$DATABASE_URL" -f migrations/002_create_gym_group_enquiries.sql
+psql "$DATABASE_URL" -f migrations/003_create_investor_enquiries.sql
+```
 
 ### Running the Application
 
@@ -197,6 +212,75 @@ GET /content/articles/article-slug
   ... // All fields from Contentful
 }
 ```
+
+## Leads Endpoints (public)
+
+Marketing site forms post to these endpoints. No authentication required. Rate limited to 5 requests per minute per IP.
+
+### POST /leads/newsletter
+
+Subscribe to the newsletter.
+
+**Request body:**
+```json
+{
+  "email": "user@example.com",
+  "consent": true
+}
+```
+
+### POST /leads/gym-group
+
+Submit a gym group partnership enquiry.
+
+**Request body:**
+```json
+{
+  "contactName": "Jane Smith",
+  "email": "jane@example.com",
+  "companyName": "FitChain Ltd",
+  "locations": "6-10",
+  "phone": "+44 7700 900000",
+  "message": "Optional message"
+}
+```
+
+`locations` must be one of: `1-5`, `6-10`, `11-20`, `21-50`, `50+`.
+
+### POST /leads/investor
+
+Submit an investor enquiry.
+
+**Request body:**
+```json
+{
+  "fullName": "John Doe",
+  "email": "john@example.com",
+  "company": "Acme Capital",
+  "investmentRange": "100k-500k",
+  "message": "Optional message"
+}
+```
+
+`investmentRange` (optional) must be one of: `under-100k`, `100k-500k`, `500k-1m`, `1m-plus`, `strategic`.
+
+**Success response (all endpoints):**
+```json
+{
+  "success": true,
+  "emailSent": true,
+  "saved": true
+}
+```
+
+**Error response:**
+```json
+{
+  "error": "Human-readable error message"
+}
+```
+
+Newsletter and gym-group submissions are persisted first; if email delivery fails the request still succeeds with `emailSent: false`. Investor enquiries return 500 when SendGrid is configured but email delivery fails, even if the row was saved.
 
 ## Notes
 
