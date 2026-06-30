@@ -1,4 +1,5 @@
 import { IsOptional, IsString, IsNumber, IsArray } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class UpdateAdminGymDto {
   @IsOptional()
@@ -28,6 +29,11 @@ export class UpdateAdminGymDto {
   @IsOptional()
   @IsString()
   required_tier?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  price_per_pass?: number;
 
   @IsOptional()
   @IsArray()

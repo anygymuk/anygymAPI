@@ -20,6 +20,7 @@ export class GymDetailResponseDto {
   latitude: number;
   longitude: number;
   required_tier: string;
+  price_per_pass: number | null;
   amenities: string[];
   opening_hours: any;
   phone: string | null;

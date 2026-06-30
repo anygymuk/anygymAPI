@@ -7,6 +7,7 @@ export class AdminGymDetailResponseDto {
   latitude: number;
   longitude: number;
   required_tier: string;
+  price_per_pass: number | null;
   amenities: string[] | null;
   opening_hours: any | null;
   phone: string | null;

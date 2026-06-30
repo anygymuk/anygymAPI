@@ -34,6 +34,9 @@ export class Gym {
   @Column({ name: 'required_tier' })
   requiredTier: string;
 
+  @Column({ name: 'price_per_pass', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  pricePerPass: number;
+
   @Column('jsonb', { nullable: true })
   amenities: string[];
 

@@ -1,5 +1,5 @@
 export class FormSuccessResponseDto {
-  success: true;
+  success: boolean;
   emailSent: boolean;
   saved: boolean;
 }

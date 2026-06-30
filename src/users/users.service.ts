@@ -655,6 +655,7 @@ export class UsersService {
         latitude: gym.latitude,
         longitude: gym.longitude,
         required_tier: gym.requiredTier,
+        price_per_pass: gym.pricePerPass != null ? parseFloat(gym.pricePerPass.toString()) : null,
         amenities: gym.amenities || null,
         opening_hours: gym.openingHours || null,
         phone: gym.phone || null,
@@ -724,6 +725,11 @@ export class UsersService {
         this.logger.log(`${adminUser.role} user ${auth0Id} has permission to update gym ${gymId}`);
       }
 
+      if (updateData.price_per_pass !== undefined && adminUser.role === 'gym_staff') {
+        this.logger.warn(`gym_staff user ${auth0Id} attempted to update price_per_pass for gym ${gymId}`);
+        throw new ForbiddenException('You do not have permission to update price per pass');
+      }
+
       // Build update object with only provided fields
       const updateObject: any = {};
       let hasUpdates = false;
@@ -754,6 +760,10 @@ export class UsersService {
       }
       if (updateData.required_tier !== undefined) {
         updateObject.requiredTier = updateData.required_tier;
+        hasUpdates = true;
+      }
+      if (updateData.price_per_pass !== undefined) {
+        updateObject.pricePerPass = updateData.price_per_pass;
         hasUpdates = true;
       }
       if (updateData.amenities !== undefined) {
