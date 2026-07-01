@@ -188,13 +188,44 @@ export class UsersService {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      // For other errors, wrap in a more descriptive error
       throw new Error(`Failed to fetch user: ${error.message}`);
     }
   }
 
   async verifyAuth0IdMatches(auth0Id: string, requestedAuth0Id: string): Promise<boolean> {
     return auth0Id === requestedAuth0Id;
+  }
+
+  async findUserEntity(auth0Id: string): Promise<User | null> {
+    return this.userRepository.findOne({ where: { auth0Id } });
+  }
+
+  async createOrGet(data: {
+    auth0Id: string;
+    email?: string;
+    fullName?: string | null;
+    onboardingCompleted?: boolean;
+  }): Promise<{ user: UserResponseDto; created: boolean }> {
+    const existing = await this.findUserEntity(data.auth0Id);
+    if (existing) {
+      return { user: await this.findOneByAuth0Id(data.auth0Id), created: false };
+    }
+
+    if (!data.email) {
+      throw new BadRequestException('Email is required to create a new user');
+    }
+
+    const user = this.userRepository.create({
+      auth0Id: data.auth0Id,
+      email: data.email,
+      fullName: data.fullName ?? null,
+      onboardingCompleted: data.onboardingCompleted ?? false,
+    });
+
+    await this.userRepository.save(user);
+    this.logger.log(`Created app_users row for auth0_id: ${data.auth0Id}`);
+
+    return { user: await this.findOneByAuth0Id(data.auth0Id), created: true };
   }
 
   async update(auth0Id: string, updateData: {
@@ -221,7 +252,7 @@ export class UsersService {
       });
 
       if (!user) {
-        throw new Error('User not found');
+        throw new NotFoundException('User not found');
       }
 
       // Build update object with all fields to update

@@ -1,19 +1,24 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Headers,
   Body,
   ForbiddenException,
   BadRequestException,
+  NotFoundException,
   UseGuards,
   Logger,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { Auth0Guard } from './guards/auth0.guard';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateUserDto } from './dto/create-user.dto';
 import { PassResponseDto } from '../passes/dto/pass-response.dto';
 
 @ApiTags('user')
@@ -24,6 +29,45 @@ export class UsersController {
   private readonly logger = new Logger(UsersController.name);
 
   constructor(private readonly usersService: UsersService) {}
+
+  @Post()
+  @HttpCode(HttpStatus.OK)
+  async createUser(
+    @Headers('auth0_id') auth0Id: string,
+    @Body() createUserDto: CreateUserDto,
+  ): Promise<UserResponseDto> {
+    try {
+      this.logger.log(`POST /user called with auth0_id: ${auth0Id}`);
+
+      if (createUserDto.auth0_id && createUserDto.auth0_id !== auth0Id) {
+        throw new ForbiddenException('Access denied: auth0_id mismatch');
+      }
+
+      const { user, created } = await this.usersService.createOrGet({
+        auth0Id,
+        email: createUserDto.email,
+        fullName: createUserDto.full_name ?? createUserDto.name ?? null,
+        onboardingCompleted: createUserDto.onboarding_completed ?? false,
+      });
+
+      if (created) {
+        this.logger.log(`Created new user: ${auth0Id}`);
+      } else {
+        this.logger.log(`Returning existing user: ${auth0Id}`);
+      }
+
+      return user;
+    } catch (error) {
+      this.logger.error(`Error in createUser: ${error.message}`, error.stack);
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(`Failed to create user: ${error.message}`);
+    }
+  }
 
   @Get()
   async getUser(
@@ -123,9 +167,15 @@ export class UsersController {
       return await this.usersService.update(auth0Id, updateData);
     } catch (error) {
       this.logger.error(`Error in updateUser: ${error.message}`, error.stack);
-      
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
       if (error.message === 'No fields provided for update') {
         throw new BadRequestException('No fields provided for update');
+      }
+      if (error.message === 'User not found') {
+        throw new NotFoundException('User not found');
       }
       if (error.message === 'User not found or no changes made') {
         throw new BadRequestException('User not found or no changes made');
