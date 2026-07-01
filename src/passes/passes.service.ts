@@ -1,7 +1,6 @@
 import { Injectable, Logger, BadRequestException, ForbiddenException, NotFoundException, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { EntityManager } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import Stripe from 'stripe';
 import { GymPass } from './entities/gym-pass.entity';
 import { PassPurchase } from './entities/pass-purchase.entity';
@@ -10,6 +9,8 @@ import { GetPassesDto } from './dto/get-passes.dto';
 import { GeneratePassDto } from './dto/generate-pass.dto';
 import { PurchasePassCheckoutDto } from './dto/purchase-pass-checkout.dto';
 import { PurchasePassCheckoutResponseDto } from './dto/purchase-pass-checkout-response.dto';
+import { CompletePassPurchaseDto } from './dto/complete-pass-purchase.dto';
+import { CompletePassPurchaseResponseDto } from './dto/complete-pass-purchase-response.dto';
 import {
   PassesWithSubscriptionResponseDto,
   RecentGymDto,
@@ -60,6 +61,7 @@ export class PassesService {
     private subscriptionsService: SubscriptionsService,
     private usersService: UsersService,
     private sendGridService: SendGridService,
+    private dataSource: DataSource,
   ) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
@@ -535,6 +537,204 @@ export class PassesService {
       session_id: session.id,
       checkout_url: session.url,
     };
+  }
+
+  async completePassPurchase(
+    auth0Id: string,
+    dto: CompletePassPurchaseDto,
+  ): Promise<CompletePassPurchaseResponseDto> {
+    if (dto.auth0_id && dto.auth0_id !== auth0Id) {
+      throw new ForbiddenException('Access denied: You can only complete purchases for yourself');
+    }
+
+    if (!this.stripe) {
+      throw new BadRequestException('Stripe is not configured');
+    }
+
+    const user = await this.userRepository.findOne({ where: { auth0Id } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const membership = await this.subscriptionsService.findActiveSubscription(auth0Id);
+    if (!membership) {
+      throw new HttpException({ error: 'Active membership required' }, HttpStatus.FORBIDDEN);
+    }
+
+    if (membership.tier !== 'free') {
+      throw new HttpException(
+        { error: 'Pass purchase is only available on the free plan' },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    const session = await this.stripe.checkout.sessions.retrieve(dto.stripe_checkout_session_id);
+
+    const result = await this.fulfillPassPurchaseFromStripeSession(session, auth0Id, dto.gym_id);
+
+    const passWithGym = await this.gymPassRepository.findOne({
+      where: { id: result.pass.id },
+      relations: ['gym', 'gym.gymChain'],
+    });
+
+    return {
+      pass: this.mapPassToResponse(passWithGym ?? result.pass),
+      purchase_id: result.purchase.id,
+      already_fulfilled: result.alreadyFulfilled,
+    };
+  }
+
+  async fulfillPassPurchaseFromStripeSession(
+    session: Stripe.Checkout.Session,
+    expectedAuth0Id?: string,
+    expectedGymId?: number,
+  ): Promise<{ pass: GymPass; purchase: PassPurchase; alreadyFulfilled: boolean }> {
+    const purchaseType = session.metadata?.purchase_type;
+    if (purchaseType && purchaseType !== 'single_pass') {
+      throw new BadRequestException('Checkout session is not a single pass purchase');
+    }
+
+    if (session.mode !== 'payment') {
+      throw new BadRequestException('Checkout session is not a one-time payment');
+    }
+
+    const sessionAuth0Id = session.metadata?.auth0_id;
+    const auth0Id = expectedAuth0Id || sessionAuth0Id;
+    if (!auth0Id) {
+      throw new BadRequestException('Unable to determine user for this checkout session');
+    }
+
+    if (expectedAuth0Id && sessionAuth0Id && sessionAuth0Id !== expectedAuth0Id) {
+      throw new ForbiddenException('Checkout session does not belong to this user');
+    }
+
+    const sessionGymId = parseInt(session.metadata?.gym_id || '', 10);
+    const gymId = expectedGymId || sessionGymId;
+    if (!gymId || Number.isNaN(gymId)) {
+      throw new BadRequestException('Gym ID is required');
+    }
+
+    if (expectedGymId && sessionGymId && sessionGymId !== expectedGymId) {
+      throw new BadRequestException('Gym ID does not match checkout session');
+    }
+
+    let existingPurchase = await this.passPurchaseRepository.findOne({
+      where: { stripeCheckoutSessionId: session.id },
+    });
+
+    if (existingPurchase?.status === 'completed' && existingPurchase.passId) {
+      const existingPass = await this.gymPassRepository.findOne({
+        where: { id: existingPurchase.passId },
+      });
+      if (existingPass) {
+        return {
+          pass: existingPass,
+          purchase: existingPurchase,
+          alreadyFulfilled: true,
+        };
+      }
+    }
+
+    if (session.payment_status !== 'paid') {
+      if (existingPurchase) {
+        existingPurchase.status = 'failed';
+        existingPurchase.updatedAt = new Date();
+        await this.passPurchaseRepository.save(existingPurchase);
+      }
+      throw new BadRequestException('Checkout session has not been paid');
+    }
+
+    const gym = await this.gymRepository.findOne({ where: { id: gymId } });
+    if (!gym) {
+      throw new NotFoundException('Gym not found');
+    }
+
+    const amountFromSession =
+      session.amount_total != null ? session.amount_total / 100 : null;
+    const amount =
+      amountFromSession ??
+      (gym.pricePerPass != null ? parseFloat(gym.pricePerPass.toString()) : null);
+
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Invalid purchase amount');
+    }
+
+    if (amountFromSession != null && gym.pricePerPass != null) {
+      const expectedAmount = parseFloat(gym.pricePerPass.toString());
+      if (Math.abs(amountFromSession - expectedAmount) > 0.01) {
+        this.logger.warn(
+          `Paid amount ${amountFromSession} differs from gym price ${expectedAmount} for gym ${gymId}`,
+        );
+      }
+    }
+
+    const paymentIntentId =
+      typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : session.payment_intent?.id || null;
+
+    return this.dataSource.transaction(async (manager) => {
+      const purchaseRepo = manager.getRepository(PassPurchase);
+      const passRepo = manager.getRepository(GymPass);
+
+      let purchase = existingPurchase
+        ? await purchaseRepo.findOne({ where: { id: existingPurchase.id } })
+        : null;
+
+      if (purchase?.passId) {
+        const existingPass = await passRepo.findOne({ where: { id: purchase.passId } });
+        if (existingPass) {
+          return {
+            pass: existingPass,
+            purchase,
+            alreadyFulfilled: true,
+          };
+        }
+      }
+
+      if (!purchase) {
+        purchase = purchaseRepo.create({
+          auth0Id,
+          gymId,
+          amount,
+          currency: session.currency || 'gbp',
+          status: 'pending',
+          stripeCheckoutSessionId: session.id,
+          stripePaymentIntentId: paymentIntentId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        purchase = await purchaseRepo.save(purchase);
+      } else if (purchase.auth0Id !== auth0Id || purchase.gymId !== gymId) {
+        throw new ForbiddenException('Purchase record does not match this user or gym');
+      }
+
+      const pass = await this.createGymPass({
+        auth0Id,
+        gymId,
+        gym,
+        subscriptionTier: 'free',
+        passCost: amount,
+        purchaseId: purchase.id,
+        validUntilHours: 24,
+        incrementVisitsUsed: false,
+        sendEmail: true,
+        manager,
+      });
+
+      purchase.status = 'completed';
+      purchase.passId = pass.id;
+      purchase.amount = amount;
+      purchase.stripePaymentIntentId = paymentIntentId;
+      purchase.updatedAt = new Date();
+      await purchaseRepo.save(purchase);
+
+      return {
+        pass,
+        purchase,
+        alreadyFulfilled: false,
+      };
+    });
   }
 
   async findPassesWithSubscription(auth0Id: string): Promise<PassesWithSubscriptionResponseDto> {

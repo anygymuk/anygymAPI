@@ -1,6 +1,6 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository } from 'typeorm';
 import Stripe from 'stripe';
 import { User } from '../users/entities/user.entity';
 import { Subscription } from '../subscriptions/entities/subscription.entity';
@@ -28,7 +28,6 @@ export class StripeService {
     private passesService: PassesService,
     private geocodingService: GeocodingService,
     private sendGridService: SendGridService,
-    private dataSource: DataSource,
   ) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
@@ -378,76 +377,15 @@ export class StripeService {
   }
 
   async handlePassPurchaseCompleted(session: Stripe.Checkout.Session): Promise<void> {
-    const purchase = await this.passPurchaseRepository.findOne({
-      where: { stripeCheckoutSessionId: session.id },
-    });
-
-    if (!purchase) {
-      this.logger.error(`No pass_purchase for session ${session.id}`);
-      return;
-    }
-
-    if (purchase.status === 'completed') {
-      this.logger.log(`Pass purchase ${purchase.id} already completed`);
-      return;
-    }
-
-    if (session.payment_status !== 'paid') {
-      purchase.status = 'failed';
-      purchase.updatedAt = new Date();
-      await this.passPurchaseRepository.save(purchase);
-      return;
-    }
-
-    const expectedPence = Math.round(parseFloat(purchase.amount.toString()) * 100);
-    if (session.amount_total !== expectedPence) {
+    try {
+      await this.passesService.fulfillPassPurchaseFromStripeSession(session);
+      this.logger.log(`Pass purchase fulfilled for session ${session.id}`);
+    } catch (error) {
       this.logger.error(
-        `Amount mismatch for purchase ${purchase.id}: expected ${expectedPence}, got ${session.amount_total}`,
+        `Failed to fulfill pass purchase for session ${session.id}: ${error.message}`,
+        error.stack,
       );
-      purchase.status = 'failed';
-      purchase.updatedAt = new Date();
-      await this.passPurchaseRepository.save(purchase);
-      return;
     }
-
-    const gymId = parseInt(session.metadata?.gym_id || '', 10);
-    if (!gymId || gymId !== purchase.gymId) {
-      this.logger.error(`Gym ID mismatch for purchase ${purchase.id}`);
-      return;
-    }
-
-    const gym = await this.gymRepository.findOne({ where: { id: purchase.gymId } });
-    if (!gym) {
-      this.logger.error(`Gym not found for purchase ${purchase.id}`);
-      return;
-    }
-
-    await this.dataSource.transaction(async (manager) => {
-      const pass = await this.passesService.createGymPass({
-        auth0Id: purchase.auth0Id,
-        gymId: purchase.gymId,
-        gym,
-        subscriptionTier: 'free',
-        passCost: parseFloat(purchase.amount.toString()),
-        purchaseId: purchase.id,
-        validUntilHours: 24,
-        incrementVisitsUsed: false,
-        sendEmail: true,
-        manager,
-      });
-
-      purchase.status = 'completed';
-      purchase.passId = pass.id;
-      purchase.stripePaymentIntentId =
-        typeof session.payment_intent === 'string'
-          ? session.payment_intent
-          : session.payment_intent?.id || null;
-      purchase.updatedAt = new Date();
-
-      await manager.getRepository(PassPurchase).save(purchase);
-    });
-
-    this.logger.log(`Pass purchase completed for session ${session.id}`);
   }
 
   async handleCheckoutSessionExpired(session: Stripe.Checkout.Session): Promise<void> {

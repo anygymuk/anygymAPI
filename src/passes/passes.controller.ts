@@ -16,6 +16,8 @@ import { GetPassesDto } from './dto/get-passes.dto';
 import { GeneratePassDto } from './dto/generate-pass.dto';
 import { PurchasePassCheckoutDto } from './dto/purchase-pass-checkout.dto';
 import { PurchasePassCheckoutResponseDto } from './dto/purchase-pass-checkout-response.dto';
+import { CompletePassPurchaseDto } from './dto/complete-pass-purchase.dto';
+import { CompletePassPurchaseResponseDto } from './dto/complete-pass-purchase-response.dto';
 import { PassesWithSubscriptionResponseDto } from './dto/passes-with-subscription-response.dto';
 
 @ApiTags('passes')
@@ -93,6 +95,22 @@ export class PassesController {
       return await this.passesService.purchasePassCheckout(auth0Id, dto);
     } catch (error) {
       this.logger.error(`Error in purchasePassCheckout: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Post('complete_pass_purchase')
+  async completePassPurchase(
+    @Headers('auth0_id') auth0Id: string,
+    @Body() dto: CompletePassPurchaseDto,
+  ): Promise<CompletePassPurchaseResponseDto> {
+    try {
+      this.logger.log(
+        `POST /complete_pass_purchase called with auth0_id: ${auth0Id}, session: ${dto.stripe_checkout_session_id}`,
+      );
+      return await this.passesService.completePassPurchase(auth0Id, dto);
+    } catch (error) {
+      this.logger.error(`Error in completePassPurchase: ${error.message}`, error.stack);
       throw error;
     }
   }
