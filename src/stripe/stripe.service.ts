@@ -1,10 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import Stripe from 'stripe';
 import { User } from '../users/entities/user.entity';
 import { Subscription } from '../subscriptions/entities/subscription.entity';
 import { Gym } from '../gyms/entities/gym.entity';
+import { PassPurchase } from '../passes/entities/pass-purchase.entity';
+import { PassesService } from '../passes/passes.service';
 import { GeocodingService } from './services/geocoding.service';
 import { SendGridService } from '../passes/services/sendgrid.service';
 
@@ -20,8 +22,13 @@ export class StripeService {
     private subscriptionRepository: Repository<Subscription>,
     @InjectRepository(Gym)
     private gymRepository: Repository<Gym>,
+    @InjectRepository(PassPurchase)
+    private passPurchaseRepository: Repository<PassPurchase>,
+    @Inject(forwardRef(() => PassesService))
+    private passesService: PassesService,
     private geocodingService: GeocodingService,
     private sendGridService: SendGridService,
+    private dataSource: DataSource,
   ) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
@@ -102,6 +109,11 @@ export class StripeService {
   async handleCheckoutSessionCompleted(
     session: Stripe.Checkout.Session,
   ): Promise<void> {
+    if (session.metadata?.purchase_type === 'single_pass') {
+      await this.handlePassPurchaseCompleted(session);
+      return;
+    }
+
     try {
       this.logger.log(`Processing checkout session: ${session.id}`);
 
@@ -362,6 +374,96 @@ export class StripeService {
         error.stack,
       );
       throw error;
+    }
+  }
+
+  async handlePassPurchaseCompleted(session: Stripe.Checkout.Session): Promise<void> {
+    const purchase = await this.passPurchaseRepository.findOne({
+      where: { stripeCheckoutSessionId: session.id },
+    });
+
+    if (!purchase) {
+      this.logger.error(`No pass_purchase for session ${session.id}`);
+      return;
+    }
+
+    if (purchase.status === 'completed') {
+      this.logger.log(`Pass purchase ${purchase.id} already completed`);
+      return;
+    }
+
+    if (session.payment_status !== 'paid') {
+      purchase.status = 'failed';
+      purchase.updatedAt = new Date();
+      await this.passPurchaseRepository.save(purchase);
+      return;
+    }
+
+    const expectedPence = Math.round(parseFloat(purchase.amount.toString()) * 100);
+    if (session.amount_total !== expectedPence) {
+      this.logger.error(
+        `Amount mismatch for purchase ${purchase.id}: expected ${expectedPence}, got ${session.amount_total}`,
+      );
+      purchase.status = 'failed';
+      purchase.updatedAt = new Date();
+      await this.passPurchaseRepository.save(purchase);
+      return;
+    }
+
+    const gymId = parseInt(session.metadata?.gym_id || '', 10);
+    if (!gymId || gymId !== purchase.gymId) {
+      this.logger.error(`Gym ID mismatch for purchase ${purchase.id}`);
+      return;
+    }
+
+    const gym = await this.gymRepository.findOne({ where: { id: purchase.gymId } });
+    if (!gym) {
+      this.logger.error(`Gym not found for purchase ${purchase.id}`);
+      return;
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      const pass = await this.passesService.createGymPass({
+        auth0Id: purchase.auth0Id,
+        gymId: purchase.gymId,
+        gym,
+        subscriptionTier: 'free',
+        passCost: parseFloat(purchase.amount.toString()),
+        purchaseId: purchase.id,
+        validUntilHours: 24,
+        incrementVisitsUsed: false,
+        sendEmail: true,
+        manager,
+      });
+
+      purchase.status = 'completed';
+      purchase.passId = pass.id;
+      purchase.stripePaymentIntentId =
+        typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : session.payment_intent?.id || null;
+      purchase.updatedAt = new Date();
+
+      await manager.getRepository(PassPurchase).save(purchase);
+    });
+
+    this.logger.log(`Pass purchase completed for session ${session.id}`);
+  }
+
+  async handleCheckoutSessionExpired(session: Stripe.Checkout.Session): Promise<void> {
+    if (session.metadata?.purchase_type !== 'single_pass') {
+      return;
+    }
+
+    const purchase = await this.passPurchaseRepository.findOne({
+      where: { stripeCheckoutSessionId: session.id },
+    });
+
+    if (purchase && purchase.status === 'pending') {
+      purchase.status = 'failed';
+      purchase.updatedAt = new Date();
+      await this.passPurchaseRepository.save(purchase);
+      this.logger.log(`Marked pass purchase ${purchase.id} as failed (session expired)`);
     }
   }
 

@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { Subscription } from './entities/subscription.entity';
 import { SubscriptionResponseDto } from './dto/subscription-response.dto';
 import { GetSubscriptionDto } from './dto/get-subscription.dto';
+import { MembershipResponseDto } from '../users/dto/membership-response.dto';
+import { User } from '../users/entities/user.entity';
 import Stripe from 'stripe';
 
 @Injectable()
@@ -15,7 +17,6 @@ export class SubscriptionsService {
     @InjectRepository(Subscription)
     private subscriptionRepository: Repository<Subscription>,
   ) {
-    // Initialize Stripe instance for subscription cancellation
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
       this.stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
@@ -45,6 +46,116 @@ export class SubscriptionsService {
       }
     }
     return result;
+  }
+
+  formatMembership(subscription: Subscription): MembershipResponseDto {
+    const formatDate = (date: Date | null): string | null => {
+      if (!date) return null;
+      if (date instanceof Date) {
+        return date.toISOString().split('T')[0];
+      }
+      if (typeof date === 'string') {
+        return new Date(date).toISOString().split('T')[0];
+      }
+      return null;
+    };
+
+    const formatTimestamp = (date: Date | null): string | null => {
+      if (!date) return null;
+      if (date instanceof Date) {
+        return date.toISOString();
+      }
+      if (typeof date === 'string') {
+        return new Date(date).toISOString();
+      }
+      return null;
+    };
+
+    return {
+      id: subscription.id,
+      user_id: subscription.userId,
+      tier: subscription.tier,
+      status: subscription.status,
+      monthly_limit: subscription.monthlyLimit,
+      visits_used: subscription.visitsUsed,
+      guest_passes_limit: subscription.guestPassesLimit,
+      guest_passes_used: subscription.guestPassesUsed,
+      price: parseFloat(subscription.price.toString()),
+      stripe_subscription_id: subscription.stripeSubscriptionId || null,
+      stripe_customer_id: subscription.stripeCustomerId || null,
+      current_period_start: formatTimestamp(subscription.currentPeriodStart),
+      current_period_end: formatTimestamp(subscription.currentPeriodEnd),
+      next_billing_date: formatDate(subscription.nextBillingDate),
+      created_at: formatTimestamp(subscription.startDate),
+      updated_at: formatTimestamp(subscription.currentPeriodStart),
+    };
+  }
+
+  async findActiveSubscription(auth0Id: string): Promise<Subscription | null> {
+    return this.subscriptionRepository.findOne({
+      where: { userId: auth0Id, status: 'active' },
+    });
+  }
+
+  async ensureStripeCustomer(user: User): Promise<string> {
+    if (user.stripeCustomerId) {
+      return user.stripeCustomerId;
+    }
+
+    if (!this.stripe) {
+      throw new BadRequestException('Stripe is not configured');
+    }
+
+    const customer = await this.stripe.customers.create({
+      email: user.email,
+      metadata: { auth0_id: user.auth0Id },
+    });
+
+    return customer.id;
+  }
+
+  async assignFreeTier(
+    auth0Id: string,
+    stripeCustomerId: string | null,
+  ): Promise<Subscription> {
+    const active = await this.findActiveSubscription(auth0Id);
+
+    if (active?.stripeSubscriptionId) {
+      this.logger.log(
+        `User ${auth0Id} has active paid subscription; skipping free tier assignment`,
+      );
+      return active;
+    }
+
+    if (active?.tier === 'free') {
+      this.logger.log(`User ${auth0Id} already on free tier`);
+      return active;
+    }
+
+    if (active) {
+      active.status = 'cancelled';
+      await this.subscriptionRepository.save(active);
+    }
+
+    const now = new Date();
+    const freeSubscription = this.subscriptionRepository.create({
+      userId: auth0Id,
+      tier: 'free',
+      monthlyLimit: 0,
+      visitsUsed: 0,
+      price: 0,
+      startDate: now,
+      nextBillingDate: null,
+      currentPeriodStart: now,
+      currentPeriodEnd: null,
+      status: 'active',
+      stripeSubscriptionId: null,
+      stripeCustomerId: stripeCustomerId,
+      guestPassesLimit: 0,
+      guestPassesUsed: 0,
+    });
+
+    return this.subscriptionRepository.save(freeSubscription);
   }
 
   async findByAuth0Id(auth0Id: string, filters?: GetSubscriptionDto): Promise<SubscriptionResponseDto> {

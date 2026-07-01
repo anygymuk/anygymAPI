@@ -14,6 +14,8 @@ import { Auth0Guard } from '../users/guards/auth0.guard';
 import { PassResponseDto } from './dto/pass-response.dto';
 import { GetPassesDto } from './dto/get-passes.dto';
 import { GeneratePassDto } from './dto/generate-pass.dto';
+import { PurchasePassCheckoutDto } from './dto/purchase-pass-checkout.dto';
+import { PurchasePassCheckoutResponseDto } from './dto/purchase-pass-checkout-response.dto';
 import { PassesWithSubscriptionResponseDto } from './dto/passes-with-subscription-response.dto';
 
 @ApiTags('passes')
@@ -74,11 +76,23 @@ export class PassesController {
     try {
       this.logger.log(`POST /generate_pass called with auth0_id: ${auth0Id}, gym_id: ${generatePassDto.gym_id}`);
 
-      // The Auth0Guard ensures auth0_id is present in headers
-      // Generate pass using the auth0_id from the header
       return await this.passesService.generatePass(auth0Id, generatePassDto);
     } catch (error) {
       this.logger.error(`Error in generatePass: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Post('purchase_pass_checkout')
+  async purchasePassCheckout(
+    @Headers('auth0_id') auth0Id: string,
+    @Body() dto: PurchasePassCheckoutDto,
+  ): Promise<PurchasePassCheckoutResponseDto> {
+    try {
+      this.logger.log(`POST /purchase_pass_checkout called with auth0_id: ${auth0Id}, gym_id: ${dto.gym_id}`);
+      return await this.passesService.purchasePassCheckout(auth0Id, dto);
+    } catch (error) {
+      this.logger.error(`Error in purchasePassCheckout: ${error.message}`, error.stack);
       throw error;
     }
   }

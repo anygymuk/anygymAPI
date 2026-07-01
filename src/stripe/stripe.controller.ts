@@ -75,8 +75,19 @@ export class StripeController {
           `Error processing checkout session: ${error.message}`,
           error.stack,
         );
-        // Return 200 to acknowledge receipt, but log the error
-        // Stripe will retry if we return non-200
+        return res.status(200).json({ received: true, error: error.message });
+      }
+    } else if (event.type === 'checkout.session.expired') {
+      const session = event.data.object as Stripe.Checkout.Session;
+
+      try {
+        await this.stripeService.handleCheckoutSessionExpired(session);
+        this.logger.log(`Successfully processed expired checkout session: ${session.id}`);
+      } catch (error) {
+        this.logger.error(
+          `Error processing expired checkout session: ${error.message}`,
+          error.stack,
+        );
         return res.status(200).json({ received: true, error: error.message });
       }
     } else {

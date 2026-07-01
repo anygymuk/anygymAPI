@@ -50,11 +50,19 @@ export class UsersController {
     }
   }
 
+  @Put()
+  async putUser(
+    @Headers('auth0_id') auth0Id: string,
+    @Body() updateUserDto: UpdateUserDto,
+  ): Promise<UserResponseDto> {
+    return this.updateUser(auth0Id, updateUserDto);
+  }
+
   @Put('update')
   async updateUser(
     @Headers('auth0_id') auth0Id: string,
     @Body() updateUserDto: UpdateUserDto,
-  ): Promise<{ message: string }> {
+  ): Promise<UserResponseDto> {
     try {
       this.logger.log(`PUT /user/update called with auth0_id: ${auth0Id}`);
 
@@ -72,6 +80,7 @@ export class UsersController {
         onboardingCompleted?: boolean;
         passNotificationConsent?: boolean;
         marketingConsent?: boolean;
+        assignFreeTier?: boolean;
       } = {};
 
       if (updateUserDto.full_name !== undefined) {
@@ -107,8 +116,10 @@ export class UsersController {
       if (updateUserDto.marketing_consent !== undefined) {
         updateData.marketingConsent = updateUserDto.marketing_consent;
       }
+      if (updateUserDto.assign_free_tier !== undefined) {
+        updateData.assignFreeTier = updateUserDto.assign_free_tier;
+      }
 
-      // Update the user - this ensures users can only update their own data
       return await this.usersService.update(auth0Id, updateData);
     } catch (error) {
       this.logger.error(`Error in updateUser: ${error.message}`, error.stack);

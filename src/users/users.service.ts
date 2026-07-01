@@ -26,6 +26,8 @@ import { AdminPassesPaginatedResponseDto } from './dto/admin-passes-paginated-re
 import { AdminCheckInResponseDto } from './dto/admin-check-in-response.dto';
 import { ChainResponseDto } from './dto/chain-response.dto';
 import { Auth0Service } from './services/auth0.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { MembershipResponseDto } from './dto/membership-response.dto';
 import { GetRevenueDto } from './dto/get-revenue.dto';
 import { AdminRevenueResponseDto, AdminRevenuePassDto } from './dto/admin-revenue-response.dto';
 
@@ -50,6 +52,7 @@ export class UsersService {
     private subscriptionRepository: Repository<Subscription>,
     private dataSource: DataSource,
     private auth0Service: Auth0Service,
+    private subscriptionsService: SubscriptionsService,
   ) {}
 
   /**
@@ -147,21 +150,18 @@ export class UsersService {
         }
       }
 
-      // Find active subscription and get tier
-      let membership: string | null = null;
+      // Find active subscription for membership object
+      let membership: MembershipResponseDto | null = null;
       try {
-        const activeSubscription = await this.subscriptionRepository.findOne({
-          where: { userId: auth0Id, status: 'active' },
-        });
+        const activeSubscription = await this.subscriptionsService.findActiveSubscription(auth0Id);
         if (activeSubscription) {
-          membership = activeSubscription.tier;
-          this.logger.log(`Active subscription found for user ${auth0Id}, tier: ${membership}`);
+          membership = this.subscriptionsService.formatMembership(activeSubscription);
+          this.logger.log(`Active subscription found for user ${auth0Id}, tier: ${membership.tier}`);
         } else {
           this.logger.log(`No active subscription found for user ${auth0Id}`);
         }
       } catch (subscriptionError) {
         this.logger.warn(`Error fetching subscription for user ${auth0Id}: ${subscriptionError.message}`);
-        // Don't fail the request if subscription lookup fails, just leave membership as null
       }
 
       const response = {
@@ -177,11 +177,11 @@ export class UsersService {
         stripe_customer_id: user.stripeCustomerId || null,
         emergency_contact_name: user.emergencyContactName || null,
         emergency_contact_number: user.emergencyContactNumber || null,
-        membership: membership,
+        membership,
         pass_notification_consent: user.passNotificationConsent ?? null,
         marketing_consent: user.marketingConsent ?? null,
       };
-      return this.removeEmptyValues(response) as UserResponseDto;
+      return response as UserResponseDto;
     } catch (error) {
       this.logger.error(`Error in findOneByAuth0Id: ${error.message}`, error.stack);
       // Re-throw NotFoundException as-is
@@ -209,7 +209,8 @@ export class UsersService {
     onboardingCompleted?: boolean;
     passNotificationConsent?: boolean;
     marketingConsent?: boolean;
-  }): Promise<{ message: string }> {
+    assignFreeTier?: boolean;
+  }): Promise<UserResponseDto> {
     try {
       this.logger.log(`Updating user with auth0_id: ${auth0Id}`);
       this.logger.log(`Update data received: ${JSON.stringify(updateData)}`);
@@ -272,17 +273,29 @@ export class UsersService {
         hasUpdates = true;
       }
 
-      if (!hasUpdates) {
+      const shouldAssignFreeTier = updateData.assignFreeTier === true;
+
+      if (!hasUpdates && !shouldAssignFreeTier) {
         throw new Error('No fields provided for update');
       }
 
-      // Use the most reliable approach: load entity, update properties, and save
-      // This ensures TypeORM properly handles column name mapping
-      Object.assign(user, updateObject);
-      await this.userRepository.save(user);
+      if (hasUpdates) {
+        Object.assign(user, updateObject);
+        await this.userRepository.save(user);
+      }
+
+      if (shouldAssignFreeTier) {
+        let stripeCustomerId = user.stripeCustomerId;
+        if (!stripeCustomerId) {
+          stripeCustomerId = await this.subscriptionsService.ensureStripeCustomer(user);
+          user.stripeCustomerId = stripeCustomerId;
+          await this.userRepository.save(user);
+        }
+        await this.subscriptionsService.assignFreeTier(auth0Id, stripeCustomerId);
+      }
 
       this.logger.log(`User updated successfully: ${auth0Id}`);
-      return { message: 'User updated successfully' };
+      return this.findOneByAuth0Id(auth0Id);
     } catch (error) {
       this.logger.error(`Error updating user: ${error.message}`, error.stack);
       throw error;

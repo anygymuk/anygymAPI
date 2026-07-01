@@ -1,10 +1,15 @@
-import { Injectable, Logger, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ForbiddenException, NotFoundException, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
+import Stripe from 'stripe';
 import { GymPass } from './entities/gym-pass.entity';
+import { PassPurchase } from './entities/pass-purchase.entity';
 import { PassResponseDto } from './dto/pass-response.dto';
 import { GetPassesDto } from './dto/get-passes.dto';
 import { GeneratePassDto } from './dto/generate-pass.dto';
+import { PurchasePassCheckoutDto } from './dto/purchase-pass-checkout.dto';
+import { PurchasePassCheckoutResponseDto } from './dto/purchase-pass-checkout-response.dto';
 import {
   PassesWithSubscriptionResponseDto,
   RecentGymDto,
@@ -14,17 +19,34 @@ import { Gym } from '../gyms/entities/gym.entity';
 import { PassPricing } from './entities/pass-pricing.entity';
 import { Subscription } from '../subscriptions/entities/subscription.entity';
 import { Event } from '../users/entities/event.entity';
+import { User } from '../users/entities/user.entity';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
 import { SendGridService } from './services/sendgrid.service';
 
+export interface CreateGymPassOptions {
+  auth0Id: string;
+  gymId: number;
+  gym: Gym;
+  subscriptionTier: string;
+  passCost?: number | null;
+  purchaseId?: number | null;
+  validUntilHours?: number;
+  incrementVisitsUsed?: boolean;
+  sendEmail?: boolean;
+  manager?: EntityManager;
+}
+
 @Injectable()
 export class PassesService {
   private readonly logger = new Logger(PassesService.name);
+  private stripe: Stripe;
 
   constructor(
     @InjectRepository(GymPass)
     private gymPassRepository: Repository<GymPass>,
+    @InjectRepository(PassPurchase)
+    private passPurchaseRepository: Repository<PassPurchase>,
     @InjectRepository(Gym)
     private gymRepository: Repository<Gym>,
     @InjectRepository(PassPricing)
@@ -33,10 +55,17 @@ export class PassesService {
     private subscriptionRepository: Repository<Subscription>,
     @InjectRepository(Event)
     private eventRepository: Repository<Event>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
     private subscriptionsService: SubscriptionsService,
     private usersService: UsersService,
     private sendGridService: SendGridService,
-  ) {}
+  ) {
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (stripeKey) {
+      this.stripe = new Stripe(stripeKey, { apiVersion: '2023-10-16' });
+    }
+  }
 
   /**
    * Removes null, undefined, and empty string values from an object
@@ -61,11 +90,54 @@ export class PassesService {
     return result;
   }
 
+  private mapPassToResponse(pass: GymPass): PassResponseDto {
+    const formatDate = (date: Date | null): string | null => {
+      if (!date) return null;
+      if (date instanceof Date) {
+        return date.toISOString();
+      }
+      if (typeof date === 'string') {
+        return new Date(date).toISOString();
+      }
+      return null;
+    };
+
+    const toCoord = (value: number | string | null | undefined): number | null => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+      const n = typeof value === 'number' ? value : parseFloat(String(value));
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const response = {
+      id: pass.id,
+      user_id: pass.userId,
+      gym_id: pass.gymId,
+      gym_name: pass.gym?.name || null,
+      gym_chain_id: pass.gym?.gymChainId || null,
+      gym_chain_name: pass.gym?.gymChain?.name || null,
+      gym_chain_logo: pass.gym?.gymChain?.logo || null,
+      gym_latitude: toCoord(pass.gym?.latitude),
+      gym_longitude: toCoord(pass.gym?.longitude),
+      pass_code: pass.passCode,
+      status: pass.status,
+      valid_until: formatDate(pass.validUntil),
+      used_at: formatDate(pass.usedAt),
+      qrcode_url: pass.qrcodeUrl || null,
+      created_at: formatDate(pass.createdAt) || '',
+      updated_at: formatDate(pass.updatedAt) || '',
+      subscription_tier: pass.subscriptionTier || null,
+      pass_cost: pass.passCost != null ? parseFloat(pass.passCost.toString()) : null,
+      purchase_id: pass.purchaseId ?? null,
+    };
+    return this.removeEmptyValues(response) as PassResponseDto;
+  }
+
   async findByAuth0Id(auth0Id: string, filters?: GetPassesDto): Promise<PassResponseDto[]> {
     try {
       this.logger.log(`Looking up passes for auth0_id: ${auth0Id}${filters?.status ? ` with status: ${filters.status}` : ''}`);
 
-      // Build query with joins to gyms and gym_chains
       const queryBuilder = this.gymPassRepository
         .createQueryBuilder('pass')
         .leftJoinAndSelect('pass.gym', 'gym')
@@ -74,12 +146,6 @@ export class PassesService {
           'pass.id',
           'pass.userId',
           'pass.gymId',
-          'gym.name',
-          'gym.gymChainId',
-          'gymChain.name',
-          'gymChain.logo',
-          'gym.latitude',
-          'gym.longitude',
           'pass.passCode',
           'pass.status',
           'pass.validUntil',
@@ -88,63 +154,27 @@ export class PassesService {
           'pass.createdAt',
           'pass.updatedAt',
           'pass.subscriptionTier',
+          'pass.passCost',
+          'pass.purchaseId',
+          'gym.name',
+          'gym.gymChainId',
+          'gymChain.name',
+          'gymChain.logo',
+          'gym.latitude',
+          'gym.longitude',
         ])
         .where('pass.userId = :auth0Id', { auth0Id });
 
-      // Filter by status if provided
       if (filters?.status) {
         queryBuilder.andWhere('pass.status = :status', { status: filters.status });
       }
 
-      // Order by created_at descending (newest first)
       queryBuilder.orderBy('pass.createdAt', 'DESC');
 
       const passes = await queryBuilder.getMany();
-
       this.logger.log(`Found ${passes.length} pass(es) for user: ${auth0Id}`);
 
-      // Format dates and transform to response DTO
-      const formatDate = (date: Date | null): string | null => {
-        if (!date) return null;
-        if (date instanceof Date) {
-          return date.toISOString();
-        }
-        if (typeof date === 'string') {
-          return new Date(date).toISOString();
-        }
-        return null;
-      };
-
-      const toCoord = (value: number | string | null | undefined): number | null => {
-        if (value === null || value === undefined) {
-          return null;
-        }
-        const n = typeof value === 'number' ? value : parseFloat(String(value));
-        return Number.isFinite(n) ? n : null;
-      };
-
-      return passes.map((pass) => {
-        const response = {
-          id: pass.id,
-          user_id: pass.userId,
-          gym_id: pass.gymId,
-          gym_name: pass.gym?.name || null,
-          gym_chain_id: pass.gym?.gymChainId || null,
-          gym_chain_name: pass.gym?.gymChain?.name || null,
-          gym_chain_logo: pass.gym?.gymChain?.logo || null,
-          gym_latitude: toCoord(pass.gym?.latitude),
-          gym_longitude: toCoord(pass.gym?.longitude),
-          pass_code: pass.passCode,
-          status: pass.status,
-          valid_until: formatDate(pass.validUntil),
-          used_at: formatDate(pass.usedAt),
-          qrcode_url: pass.qrcodeUrl || null,
-          created_at: formatDate(pass.createdAt) || '',
-          updated_at: formatDate(pass.updatedAt) || '',
-          subscription_tier: pass.subscriptionTier || null,
-        };
-        return this.removeEmptyValues(response) as PassResponseDto;
-      });
+      return passes.map((pass) => this.mapPassToResponse(pass));
     } catch (error) {
       this.logger.error(
         `Error in findByAuth0Id: ${error.message}`,
@@ -154,10 +184,6 @@ export class PassesService {
     }
   }
 
-  /**
-   * Validates if subscription tier allows access to gym tier
-   * standard < premium < elite
-   */
   /**
    * From passes ordered newest-first, collect up to five distinct gyms by first appearance.
    */
@@ -186,9 +212,6 @@ export class PassesService {
     return recent;
   }
 
-  /**
-   * Builds recent_gyms from active + history partitions (globally sorted by pass created_at desc).
-   */
   recentGymsFromActiveAndHistory(
     activePasses: PassResponseDto[],
     passHistory: PassResponseDto[],
@@ -212,34 +235,125 @@ export class PassesService {
     return subscriptionLevel >= gymLevel;
   }
 
+  async createGymPass(options: CreateGymPassOptions): Promise<GymPass> {
+    const {
+      auth0Id,
+      gymId,
+      gym,
+      subscriptionTier,
+      passCost = null,
+      purchaseId = null,
+      validUntilHours = 2,
+      incrementVisitsUsed = false,
+      sendEmail = true,
+      manager,
+    } = options;
+
+    const passRepo = manager ? manager.getRepository(GymPass) : this.gymPassRepository;
+    const eventRepo = manager ? manager.getRepository(Event) : this.eventRepository;
+    const subscriptionRepo = manager ? manager.getRepository(Subscription) : this.subscriptionRepository;
+
+    const now = new Date();
+    const passCode = `PASS-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    const validUntil = new Date(now.getTime() + validUntilHours * 60 * 60 * 1000);
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(passCode)}`;
+
+    const newPass = passRepo.create({
+      userId: auth0Id,
+      gymId,
+      passCode,
+      status: 'active',
+      validUntil,
+      qrcodeUrl: qrCodeUrl,
+      createdAt: now,
+      updatedAt: now,
+      subscriptionTier,
+      passCost,
+      purchaseId,
+    });
+
+    const savedPass = await passRepo.save(newPass);
+    this.logger.log(`Pass created successfully with ID: ${savedPass.id}`);
+
+    const user = await this.usersService.findOneByAuth0Id(auth0Id);
+
+    try {
+      const eventDescription = `New pass created for ${gym.id}, ${gym.name} by member ${user.full_name || 'Unknown'}`;
+      const newEvent = eventRepo.create({
+        userId: auth0Id,
+        gymId: gymId.toString(),
+        gymChainId: gym.gymChainId ? gym.gymChainId.toString() : null,
+        eventType: 'pass_created',
+        eventDescription,
+        createdAt: now,
+      });
+      await eventRepo.save(newEvent);
+    } catch (eventError) {
+      this.logger.error(`Failed to create event record: ${eventError.message}`, eventError.stack);
+    }
+
+    if (incrementVisitsUsed) {
+      const subscriptionEntity = await subscriptionRepo.findOne({
+        where: { userId: auth0Id, status: 'active' },
+      });
+
+      if (subscriptionEntity) {
+        subscriptionEntity.visitsUsed += 1;
+        await subscriptionRepo.save(subscriptionEntity);
+      }
+    }
+
+    if (sendEmail) {
+      this.sendGridService.sendPassEmail({
+        to: user.email,
+        recipientName: user.full_name || 'Valued Member',
+        gymName: gym.name,
+        passQr: qrCodeUrl,
+        passCode,
+        gymAddress: gym.address,
+        gymPostcode: gym.postcode,
+        gymCity: gym.city,
+        gymLng: parseFloat(gym.longitude.toString()),
+        gymLat: parseFloat(gym.latitude.toString()),
+      }).catch((emailError) => {
+        this.logger.error(`Failed to send pass email: ${emailError.message}`, emailError.stack);
+      });
+    }
+
+    return savedPass;
+  }
+
   async generatePass(auth0Id: string, generatePassDto: GeneratePassDto): Promise<{ message: string; pass_id: number }> {
     try {
       this.logger.log(`Generating pass for auth0_id: ${auth0Id}, gym_id: ${generatePassDto.gym_id}`);
 
-      // Security check: Ensure the auth0_id in the request matches the header
       if (generatePassDto.auth0_id !== auth0Id) {
         throw new ForbiddenException('Access denied: You can only generate passes for yourself');
       }
 
-      // Step 1: Validate user has an active subscription
-      let subscription;
-      try {
-        subscription = await this.subscriptionsService.findByAuth0Id(auth0Id, { status: 'active' });
-      } catch (error) {
-        if (error instanceof NotFoundException) {
-          throw new BadRequestException('You must have an active subscription to generate a pass');
-        }
-        throw error;
+      const subscriptionEntity = await this.subscriptionsService.findActiveSubscription(auth0Id);
+      if (!subscriptionEntity) {
+        throw new HttpException({ error: 'Active membership required' }, HttpStatus.FORBIDDEN);
       }
 
-      // Step 1.5: Check if user has credits available (visits_used < monthly_limit)
+      if (subscriptionEntity.tier === 'free') {
+        throw new HttpException(
+          {
+            error: 'Free tier members must purchase passes individually',
+            code: 'FREE_TIER_PURCHASE_REQUIRED',
+          },
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      const subscription = await this.subscriptionsService.findByAuth0Id(auth0Id, { status: 'active' });
+
       if (subscription.visits_used >= subscription.monthly_limit) {
         throw new BadRequestException(
           `You are out of passes for this month. You have used ${subscription.visits_used} of ${subscription.monthly_limit} available passes.`,
         );
       }
 
-      // Step 1.6: Check if user already has an active pass (valid_until > current date/time)
       const now = new Date();
       const existingActivePass = await this.gymPassRepository
         .createQueryBuilder('pass')
@@ -255,7 +369,6 @@ export class PassesService {
         );
       }
 
-      // Step 2: Get gym details
       const gym = await this.gymRepository.findOne({
         where: { id: generatePassDto.gym_id },
       });
@@ -268,109 +381,27 @@ export class PassesService {
         throw new BadRequestException('This gym is not currently active');
       }
 
-      // Step 3: Validate subscription tier matches gym required tier
       if (!this.validateTierAccess(subscription.tier, gym.requiredTier)) {
         throw new ForbiddenException(
           `Your ${subscription.tier} subscription does not allow access to ${gym.requiredTier} tier gyms. ` +
           `Standard subscriptions can access standard gyms, premium can access standard and premium, ` +
-          `and elite can access all gym tiers.`
+          `and elite can access all gym tiers.`,
         );
       }
 
-      // Step 4: Get pass pricing
       const passPricing = await this.passPricingRepository.findOne({
         where: { tier: subscription.tier },
       });
 
-      if (!passPricing) {
-        this.logger.warn(`Pass pricing not found for tier: ${subscription.tier}, using 0 as default`);
-      }
-
-      // Step 5: Generate pass code
-      const passCode = `PASS-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-
-      // Step 6: Create pass record
-      // Reuse the 'now' variable declared earlier for consistency
-      const validUntil = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours from now
-      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(passCode)}`;
-
-      const newPass = this.gymPassRepository.create({
-        userId: auth0Id,
+      const savedPass = await this.createGymPass({
+        auth0Id,
         gymId: generatePassDto.gym_id,
-        passCode,
-        status: 'active',
-        validUntil,
-        qrcodeUrl: qrCodeUrl,
-        createdAt: now,
-        updatedAt: now,
+        gym,
         subscriptionTier: subscription.tier,
         passCost: passPricing ? parseFloat(passPricing.defaultPrice.toString()) : 0,
-      });
-
-      const savedPass = await this.gymPassRepository.save(newPass);
-      this.logger.log(`Pass created successfully with ID: ${savedPass.id}`);
-
-      // Step 6.5: Get user details (needed for both event and email)
-      const user = await this.usersService.findOneByAuth0Id(auth0Id);
-
-      // Step 6.6: Create event record
-      try {
-        // Build event description
-        const eventDescription = `New pass created for ${gym.id}, ${gym.name} by member ${user.full_name || 'Unknown'}`;
-        
-        // Create event record
-        const newEvent = this.eventRepository.create({
-          userId: auth0Id,
-          gymId: generatePassDto.gym_id.toString(),
-          gymChainId: gym.gymChainId ? gym.gymChainId.toString() : null,
-          eventType: 'pass_created',
-          eventDescription: eventDescription,
-          createdAt: now,
-        });
-        
-        await this.eventRepository.save(newEvent);
-        this.logger.log(`Event record created successfully for pass ${savedPass.id}`);
-      } catch (eventError) {
-        // Log error but don't fail the request if event creation fails
-        this.logger.error(`Failed to create event record: ${eventError.message}`, eventError.stack);
-      }
-
-      // Step 6.7: Increment visits_used in the subscription
-      // Fetch the subscription entity to update it
-      const subscriptionEntity = await this.subscriptionRepository.findOne({
-        where: { userId: auth0Id, status: 'active' },
-      });
-
-      if (subscriptionEntity) {
-        subscriptionEntity.visitsUsed += 1;
-        await this.subscriptionRepository.save(subscriptionEntity);
-        this.logger.log(
-          `Incremented visits_used for subscription ${subscriptionEntity.id}. New value: ${subscriptionEntity.visitsUsed}`,
-        );
-      } else {
-        this.logger.error(
-          `Could not find subscription entity to update visits_used for user: ${auth0Id}`,
-        );
-        // Don't throw error - pass was already created, just log the issue
-      }
-
-      // Step 7: Send email via SendGrid (don't await - fire and forget)
-
-      // Step 8: Send email via SendGrid (don't await - fire and forget)
-      this.sendGridService.sendPassEmail({
-        to: user.email,
-        recipientName: user.full_name || 'Valued Member',
-        gymName: gym.name,
-        passQr: qrCodeUrl,
-        passCode,
-        gymAddress: gym.address,
-        gymPostcode: gym.postcode,
-        gymCity: gym.city,
-        gymLng: parseFloat(gym.longitude.toString()),
-        gymLat: parseFloat(gym.latitude.toString()),
-      }).catch((emailError) => {
-        // Log email error but don't fail the request
-        this.logger.error(`Failed to send pass email: ${emailError.message}`, emailError.stack);
+        validUntilHours: 2,
+        incrementVisitsUsed: true,
+        sendEmail: true,
       });
 
       return {
@@ -379,44 +410,154 @@ export class PassesService {
       };
     } catch (error) {
       this.logger.error(`Error in generatePass: ${error.message}`, error.stack);
-      if (error instanceof BadRequestException || error instanceof ForbiddenException || error instanceof NotFoundException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException ||
+        error instanceof HttpException
+      ) {
         throw error;
       }
       throw new Error(`Failed to generate pass: ${error.message}`);
     }
   }
 
+  async purchasePassCheckout(
+    auth0Id: string,
+    dto: PurchasePassCheckoutDto,
+  ): Promise<PurchasePassCheckoutResponseDto> {
+    if (dto.auth0_id && dto.auth0_id !== auth0Id) {
+      throw new ForbiddenException('Access denied: You can only purchase passes for yourself');
+    }
+
+    if (!dto.gym_id) {
+      throw new BadRequestException('Gym ID is required');
+    }
+
+    if (!this.stripe) {
+      throw new BadRequestException('Stripe is not configured');
+    }
+
+    const user = await this.userRepository.findOne({ where: { auth0Id } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const membership = await this.subscriptionsService.findActiveSubscription(auth0Id);
+    if (!membership) {
+      throw new HttpException({ error: 'Active membership required' }, HttpStatus.FORBIDDEN);
+    }
+
+    if (membership.tier !== 'free') {
+      throw new HttpException(
+        { error: 'Pass purchase is only available on the free plan' },
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    const gym = await this.gymRepository.findOne({ where: { id: dto.gym_id } });
+    if (!gym) {
+      throw new NotFoundException('Gym not found');
+    }
+
+    const amount = gym.pricePerPass != null ? parseFloat(gym.pricePerPass.toString()) : 0;
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Pass purchase not available at this gym');
+    }
+
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const pendingPurchase = await this.passPurchaseRepository
+      .createQueryBuilder('purchase')
+      .where('purchase.auth0Id = :auth0Id', { auth0Id })
+      .andWhere('purchase.gymId = :gymId', { gymId: dto.gym_id })
+      .andWhere('purchase.status = :status', { status: 'pending' })
+      .andWhere('purchase.createdAt > :since', { since: thirtyMinAgo })
+      .getOne();
+
+    if (pendingPurchase) {
+      throw new HttpException(
+        { error: 'You already have a pending purchase for this gym' },
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    let customerId = user.stripeCustomerId;
+    if (!customerId) {
+      customerId = await this.subscriptionsService.ensureStripeCustomer(user);
+      user.stripeCustomerId = customerId;
+      await this.userRepository.save(user);
+    }
+
+    const purchase = this.passPurchaseRepository.create({
+      auth0Id,
+      gymId: dto.gym_id,
+      amount,
+      currency: 'gbp',
+      status: 'pending',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const savedPurchase = await this.passPurchaseRepository.save(purchase);
+
+    const session = await this.stripe.checkout.sessions.create({
+      customer: customerId,
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'gbp',
+            unit_amount: Math.round(amount * 100),
+            product_data: {
+              name: `Gym Pass — ${gym.name}`,
+              metadata: { gym_id: String(dto.gym_id) },
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: dto.success_url,
+      cancel_url: dto.cancel_url,
+      metadata: {
+        auth0_id: auth0Id,
+        gym_id: String(dto.gym_id),
+        purchase_type: 'single_pass',
+        price_per_pass: String(amount),
+        pass_purchase_id: String(savedPurchase.id),
+      },
+    });
+
+    savedPurchase.stripeCheckoutSessionId = session.id;
+    savedPurchase.updatedAt = new Date();
+    await this.passPurchaseRepository.save(savedPurchase);
+
+    return {
+      session_id: session.id,
+      checkout_url: session.url,
+    };
+  }
+
   async findPassesWithSubscription(auth0Id: string): Promise<PassesWithSubscriptionResponseDto> {
     try {
       this.logger.log(`Looking up passes with subscription for auth0_id: ${auth0Id}`);
 
-      // Fetch all passes for the user
       const allPasses = await this.findByAuth0Id(auth0Id);
-
-      // Get current date/time for comparison
       const now = new Date();
 
-      // Separate passes into active and history based on valid_until date
-      // Active: valid_until > current date/time
-      // Expired: valid_until <= current date/time or valid_until is null
       const activePasses = allPasses.filter(pass => {
         if (!pass.valid_until) return false;
-        const validUntilDate = new Date(pass.valid_until);
-        return validUntilDate > now;
+        return new Date(pass.valid_until) > now;
       });
       const passHistory = allPasses.filter(pass => {
-        if (!pass.valid_until) return true; // Consider passes without valid_until as expired
-        const validUntilDate = new Date(pass.valid_until);
-        return validUntilDate <= now;
+        if (!pass.valid_until) return true;
+        return new Date(pass.valid_until) <= now;
       });
 
       const recentGyms = this.recentGymsFromActiveAndHistory(activePasses, passHistory);
 
-      // Fetch active subscription
       let subscriptionSummary: SubscriptionSummaryDto | null = null;
       try {
         const subscription = await this.subscriptionsService.findByAuth0Id(auth0Id, { status: 'active' });
-        
         subscriptionSummary = {
           tier: subscription.tier,
           monthly_limit: subscription.monthly_limit,
@@ -431,13 +572,11 @@ export class PassesService {
       } catch (error) {
         if (error instanceof NotFoundException) {
           this.logger.log(`No active subscription found for user: ${auth0Id}`);
-          // subscriptionSummary remains null
         } else {
           this.logger.error(
             `Error fetching subscription for user ${auth0Id}: ${error.message}`,
             error.stack,
           );
-          // Continue without subscription data
         }
       }
 
@@ -456,4 +595,3 @@ export class PassesService {
     }
   }
 }
-

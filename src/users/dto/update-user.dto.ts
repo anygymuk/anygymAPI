@@ -1,4 +1,5 @@
 import { IsOptional, IsString, IsDateString, IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -43,6 +44,12 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsBoolean()
+  @Type(() => Boolean)
   marketing_consent?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  assign_free_tier?: boolean;
 }
 

@@ -16,5 +16,7 @@ export class PassResponseDto {
   created_at: string;
   updated_at: string;
   subscription_tier: string | null;
+  pass_cost?: number | null;
+  purchase_id?: number | null;
 }
 

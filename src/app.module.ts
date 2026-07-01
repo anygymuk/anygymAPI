@@ -20,6 +20,7 @@ import { Event } from './users/entities/event.entity';
 import { Subscription } from './subscriptions/entities/subscription.entity';
 import { GymPass } from './passes/entities/gym-pass.entity';
 import { PassPricing } from './passes/entities/pass-pricing.entity';
+import { PassPurchase } from './passes/entities/pass-purchase.entity';
 import { NewsletterSubscription } from './leads/entities/newsletter-subscription.entity';
 import { GymGroupEnquiry } from './leads/entities/gym-group-enquiry.entity';
 import { InvestorEnquiry } from './leads/entities/investor-enquiry.entity';
@@ -56,6 +57,7 @@ const isPassExpiryCronEnabled =
             Subscription,
             GymPass,
             PassPricing,
+            PassPurchase,
             NewsletterSubscription,
             GymGroupEnquiry,
             InvestorEnquiry,

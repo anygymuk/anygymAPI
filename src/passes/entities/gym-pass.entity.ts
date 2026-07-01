@@ -47,5 +47,8 @@ export class GymPass {
 
   @Column({ name: 'pass_cost', type: 'decimal', precision: 10, scale: 2, nullable: true })
   passCost: number;
+
+  @Column({ name: 'purchase_id', nullable: true })
+  purchaseId: number;
 }
 

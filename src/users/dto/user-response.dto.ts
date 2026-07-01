@@ -1,3 +1,5 @@
+import { MembershipResponseDto } from './membership-response.dto';
+
 export class UserResponseDto {
   auth0_id: string;
   email: string;
@@ -11,7 +13,7 @@ export class UserResponseDto {
   stripe_customer_id: string | null;
   emergency_contact_name: string | null;
   emergency_contact_number: string | null;
-  membership: string | null;
+  membership: MembershipResponseDto | null;
   pass_notification_consent: boolean | null;
   marketing_consent: boolean | null;
 }

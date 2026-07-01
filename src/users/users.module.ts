@@ -12,10 +12,14 @@ import { Gym } from '../gyms/entities/gym.entity';
 import { GymChain } from '../gyms/entities/gym-chain.entity';
 import { Subscription } from '../subscriptions/entities/subscription.entity';
 import { Auth0Guard } from './guards/auth0.guard';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { Auth0Service } from './services/auth0.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, AdminUser, Event, GymPass, Gym, GymChain, Subscription])],
+  imports: [
+    TypeOrmModule.forFeature([User, AdminUser, Event, GymPass, Gym, GymChain, Subscription]),
+    SubscriptionsModule,
+  ],
   controllers: [UsersController, AdminController, ChainsController],
   providers: [UsersService, Auth0Guard, Auth0Service],
   exports: [UsersService],
