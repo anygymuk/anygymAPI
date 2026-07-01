@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: anygym-api
+    runtime: node
+    buildCommand: npm ci && NODE_OPTIONS=--max-old-space-size=384 npm run build && npm prune --omit=dev
+    startCommand: NODE_ENV=production NODE_OPTIONS=--max-old-space-size=460 node dist/main
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PASS_EXPIRY_CRON_ENABLED
+        value: "true"

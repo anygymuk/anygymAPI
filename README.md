@@ -112,18 +112,23 @@ GET /gyms?required_tier=premium&amenities=pool&gym_chain_id=1
 
 ## Deployment to Render
 
+Render free/starter instances have a **512MB RAM limit**. Avoid high `max-old-space-size` values during build or startup.
+
 1. Connect your GitHub repository to Render
-2. Create a new Web Service
+2. Create a new Web Service (or use the included `render.yaml` blueprint)
 3. Set the following:
-   - **Build Command**: `NODE_OPTIONS=--max-old-space-size=8192 npm install && npm run build`
-   - **Start Command**: `npm run start:prod`
+   - **Build Command**: `npm ci && NODE_OPTIONS=--max-old-space-size=384 npm run build && npm prune --omit=dev`
+   - **Start Command**: `NODE_ENV=production NODE_OPTIONS=--max-old-space-size=460 node dist/main`
    - **Environment Variables**:
+     - `NODE_ENV`: `production`
      - `DATABASE_URL`: Your Neon PostgreSQL connection string
      - `PORT`: (Render will set this automatically)
      - `CONTENTFUL_SPACE_ID`: Your Contentful space ID
      - `CONTENTFUL_ACCESS_TOKEN`: Your Contentful Content Delivery API access token
      - `CONTENTFUL_ENVIRONMENT`: (Optional) Contentful environment, defaults to 'master'
-     - `PASS_EXPIRY_CRON_ENABLED`: (Optional) Set to `false` to disable the every-minute pass expiry cron job
+     - `PASS_EXPIRY_CRON_ENABLED`: (Optional) Set to `false` to disable the every-minute pass expiry cron job and reduce memory use
+
+If the service still OOMs on the 512MB plan, upgrade to a Render instance with more RAM or set `PASS_EXPIRY_CRON_ENABLED=false`.
 
 ## Project Structure
 

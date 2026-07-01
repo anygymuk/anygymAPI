@@ -50,7 +50,10 @@ function swaggerBasicAuthMiddleware(
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const isProduction = process.env.NODE_ENV === 'production';
+  const app = await NestFactory.create(AppModule, {
+    logger: isProduction ? ['error', 'warn', 'log'] : undefined,
+  });
 
   // Enable CORS for frontend communication
   app.enableCors();
@@ -73,7 +76,6 @@ async function bootstrap() {
     process.env.SWAGGER_ENABLED === 'true';
 
   const swaggerDocsPassword = process.env.SWAGGER_DOCS_PASSWORD;
-  const isProduction = process.env.NODE_ENV === 'production';
 
   if (swaggerEnabled && isProduction && !swaggerDocsPassword) {
     console.warn(
