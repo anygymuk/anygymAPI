@@ -78,6 +78,54 @@ export class UsersService {
     return result;
   }
 
+  private formatDateOfBirth(dateOfBirth: Date | string | null | undefined): string | null {
+    if (!dateOfBirth) {
+      return null;
+    }
+    try {
+      if (dateOfBirth instanceof Date) {
+        return dateOfBirth.toISOString().split('T')[0];
+      }
+      if (typeof dateOfBirth === 'string') {
+        return new Date(dateOfBirth).toISOString().split('T')[0];
+      }
+    } catch (dateError) {
+      this.logger.warn(`Error formatting date_of_birth: ${dateError.message}`);
+    }
+    return null;
+  }
+
+  private buildUserResponseDto(
+    user: User,
+    membership: MembershipResponseDto | null,
+  ): UserResponseDto {
+    return {
+      auth0_id: user.auth0Id || '',
+      email: user.email || '',
+      full_name: user.fullName || null,
+      onboarding_completed: user.onboardingCompleted ?? false,
+      address_line1: user.addressLine1 || null,
+      address_line2: user.addressLine2 || null,
+      address_city: user.addressCity || null,
+      address_postcode: user.addressPostcode || null,
+      date_of_birth: this.formatDateOfBirth(user.dateOfBirth),
+      stripe_customer_id: user.stripeCustomerId || null,
+      emergency_contact_name: user.emergencyContactName || null,
+      emergency_contact_number: user.emergencyContactNumber || null,
+      membership,
+      pass_notification_consent: user.passNotificationConsent ?? null,
+      marketing_consent: user.marketingConsent ?? null,
+    };
+  }
+
+  private async resolveMembership(auth0Id: string): Promise<MembershipResponseDto | null> {
+    const activeSubscription = await this.subscriptionsService.findActiveSubscription(auth0Id);
+    if (!activeSubscription) {
+      return null;
+    }
+    return this.subscriptionsService.formatMembership(activeSubscription);
+  }
+
   async findOneByAuth0Id(auth0Id: string): Promise<UserResponseDto> {
     try {
       this.logger.log(`Looking up user with auth0_id: ${auth0Id}`);
@@ -135,27 +183,10 @@ export class UsersService {
 
       this.logger.log(`User found: ${user.email}`);
 
-      // Safely format date_of_birth
-      let dateOfBirth: string | null = null;
-      if (user.dateOfBirth) {
-        try {
-          if (user.dateOfBirth instanceof Date) {
-            dateOfBirth = user.dateOfBirth.toISOString().split('T')[0];
-          } else if (typeof user.dateOfBirth === 'string') {
-            // If it's already a string, try to format it
-            dateOfBirth = new Date(user.dateOfBirth).toISOString().split('T')[0];
-          }
-        } catch (dateError) {
-          this.logger.warn(`Error formatting date_of_birth: ${dateError.message}`);
-        }
-      }
-
-      // Find active subscription for membership object
       let membership: MembershipResponseDto | null = null;
       try {
-        const activeSubscription = await this.subscriptionsService.findActiveSubscription(auth0Id);
-        if (activeSubscription) {
-          membership = this.subscriptionsService.formatMembership(activeSubscription);
+        membership = await this.resolveMembership(auth0Id);
+        if (membership) {
           this.logger.log(`Active subscription found for user ${auth0Id}, tier: ${membership.tier}`);
         } else {
           this.logger.log(`No active subscription found for user ${auth0Id}`);
@@ -164,24 +195,7 @@ export class UsersService {
         this.logger.warn(`Error fetching subscription for user ${auth0Id}: ${subscriptionError.message}`);
       }
 
-      const response = {
-        auth0_id: user.auth0Id || '',
-        email: user.email || '',
-        full_name: user.fullName || null,
-        onboarding_completed: user.onboardingCompleted ?? false,
-        address_line1: user.addressLine1 || null,
-        address_line2: user.addressLine2 || null,
-        address_city: user.addressCity || null,
-        address_postcode: user.addressPostcode || null,
-        date_of_birth: dateOfBirth,
-        stripe_customer_id: user.stripeCustomerId || null,
-        emergency_contact_name: user.emergencyContactName || null,
-        emergency_contact_number: user.emergencyContactNumber || null,
-        membership,
-        pass_notification_consent: user.passNotificationConsent ?? null,
-        marketing_consent: user.marketingConsent ?? null,
-      };
-      return response as UserResponseDto;
+      return this.buildUserResponseDto(user, membership);
     } catch (error) {
       this.logger.error(`Error in findOneByAuth0Id: ${error.message}`, error.stack);
       // Re-throw NotFoundException as-is
@@ -318,11 +332,24 @@ export class UsersService {
       if (shouldAssignFreeTier) {
         let stripeCustomerId = user.stripeCustomerId;
         if (!stripeCustomerId) {
-          stripeCustomerId = await this.subscriptionsService.ensureStripeCustomer(user);
-          user.stripeCustomerId = stripeCustomerId;
-          await this.userRepository.save(user);
+          stripeCustomerId = await this.subscriptionsService.tryEnsureStripeCustomer(user);
+          if (stripeCustomerId) {
+            user.stripeCustomerId = stripeCustomerId;
+            await this.userRepository.save(user);
+          }
         }
-        await this.subscriptionsService.assignFreeTier(auth0Id, stripeCustomerId);
+
+        const freeSubscription = await this.subscriptionsService.assignFreeTier(
+          auth0Id,
+          stripeCustomerId,
+        );
+        const membership = this.subscriptionsService.formatMembership(freeSubscription);
+        this.logger.log(
+          `Free tier assigned for user ${auth0Id}: tier=${membership.tier}, status=${membership.status}`,
+        );
+
+        const refreshedUser = await this.userRepository.findOne({ where: { auth0Id } });
+        return this.buildUserResponseDto(refreshedUser ?? user, membership);
       }
 
       this.logger.log(`User updated successfully: ${auth0Id}`);

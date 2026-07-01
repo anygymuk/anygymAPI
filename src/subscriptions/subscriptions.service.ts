@@ -114,6 +114,32 @@ export class SubscriptionsService {
     return customer.id;
   }
 
+  async tryEnsureStripeCustomer(user: User): Promise<string | null> {
+    if (user.stripeCustomerId) {
+      return user.stripeCustomerId;
+    }
+
+    if (!this.stripe) {
+      this.logger.warn(
+        `Stripe not configured; skipping customer creation for user ${user.auth0Id}`,
+      );
+      return null;
+    }
+
+    try {
+      const customer = await this.stripe.customers.create({
+        email: user.email,
+        metadata: { auth0_id: user.auth0Id },
+      });
+      return customer.id;
+    } catch (error) {
+      this.logger.warn(
+        `Stripe customer creation failed for user ${user.auth0Id}: ${error.message}`,
+      );
+      return null;
+    }
+  }
+
   async assignFreeTier(
     auth0Id: string,
     stripeCustomerId: string | null,
@@ -128,8 +154,16 @@ export class SubscriptionsService {
     }
 
     if (active?.tier === 'free') {
-      this.logger.log(`User ${auth0Id} already on free tier`);
-      return active;
+      this.logger.log(`User ${auth0Id} already on free tier; normalizing subscription`);
+      active.status = 'active';
+      active.monthlyLimit = 0;
+      active.guestPassesLimit = 0;
+      active.price = 0;
+      active.stripeSubscriptionId = null;
+      if (stripeCustomerId && !active.stripeCustomerId) {
+        active.stripeCustomerId = stripeCustomerId;
+      }
+      return this.subscriptionRepository.save(active);
     }
 
     if (active) {
