@@ -3,5 +3,6 @@ export class GetRevenueDto {
   to_date: string;
   gym_id?: number;
   page?: number;
+  passes_per_page?: number;
 }
 

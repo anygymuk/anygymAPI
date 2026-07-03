@@ -310,17 +310,32 @@ export class AdminController {
     @Query('from_date') fromDate: string,
     @Query('to_date') toDate: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('passes_page') passesPage?: string,
+    @Query('passes_per_page') passesPerPage?: string,
     @Query('gym_id') gymId?: string,
   ): Promise<AdminRevenueResponseDto> {
     try {
-      this.logger.log(`GET /admin/revenue called with auth0_id: ${auth0Id}, from_date: ${fromDate}, to_date: ${toDate}, gym_id: ${gymId || 'none'}, page: ${page}`);
+      const resolvedPage = passesPage ? parseInt(passesPage, 10) : page;
+      const resolvedPerPage = passesPerPage ? parseInt(passesPerPage, 10) : 20;
+
+      if (Number.isNaN(resolvedPage) || resolvedPage < 1) {
+        throw new BadRequestException('page must be a positive integer');
+      }
+      if (Number.isNaN(resolvedPerPage) || resolvedPerPage < 1) {
+        throw new BadRequestException('passes_per_page must be a positive integer');
+      }
+
+      this.logger.log(
+        `GET /admin/revenue called with auth0_id: ${auth0Id}, from_date: ${fromDate}, to_date: ${toDate}, gym_id: ${gymId || 'none'}, page: ${resolvedPage}, passes_per_page: ${resolvedPerPage}`,
+      );
       
       // Build filters object from query parameters
       const filters: GetRevenueDto = {
         from_date: fromDate,
         to_date: toDate,
         gym_id: gymId ? parseInt(gymId, 10) : undefined,
-        page: page,
+        page: resolvedPage,
+        passes_per_page: resolvedPerPage,
       };
       
       // The Auth0Guard ensures auth0_id is present in headers

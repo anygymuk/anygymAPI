@@ -2242,6 +2242,23 @@ export class UsersService {
     return cost;
   }
 
+  private parseRevenueDateRange(
+    fromDateStr: string,
+    toDateStr: string,
+  ): { fromDate: Date; toDate: Date } {
+    const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+
+    const fromDate = dateOnlyPattern.test(fromDateStr)
+      ? new Date(`${fromDateStr}T00:00:00.000Z`)
+      : new Date(fromDateStr);
+
+    const toDate = dateOnlyPattern.test(toDateStr)
+      ? new Date(`${toDateStr}T23:59:59.999Z`)
+      : new Date(toDateStr);
+
+    return { fromDate, toDate };
+  }
+
   async findAdminRevenue(auth0Id: string, filters: GetRevenueDto): Promise<AdminRevenueResponseDto> {
     try {
       this.logger.log(`Looking up admin revenue with auth0_id: ${auth0Id}, from_date: ${filters.from_date}, to_date: ${filters.to_date}, gym_id: ${filters.gym_id || 'none'}`);
@@ -2251,9 +2268,8 @@ export class UsersService {
         throw new BadRequestException('from_date and to_date are required');
       }
 
-      // Parse and validate dates
-      const fromDate = new Date(filters.from_date);
-      const toDate = new Date(filters.to_date);
+      // Parse and validate dates (date-only strings are inclusive full calendar days in UTC)
+      const { fromDate, toDate } = this.parseRevenueDateRange(filters.from_date, filters.to_date);
 
       if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
         throw new BadRequestException('Invalid date format for from_date or to_date');
@@ -2262,6 +2278,10 @@ export class UsersService {
       if (fromDate > toDate) {
         throw new BadRequestException('from_date must be before or equal to to_date');
       }
+
+      this.logger.log(
+        `Revenue date range resolved to ${fromDate.toISOString()} – ${toDate.toISOString()}`,
+      );
 
       // Find the admin user to get their role and gym_chain_id or access_gyms
       const adminUser = await this.adminUserRepository.findOne({
@@ -2409,9 +2429,9 @@ export class UsersService {
       const eliteMembers = this.countDistinctMembersByTier(allPasses, 'elite');
       const freeMembers = this.countDistinctMembersByTier(allPasses, 'free');
 
-      // Paginate passes (20 per page)
+      // Paginate passes
       const page = filters.page || 1;
-      const pageSize = 20;
+      const pageSize = filters.passes_per_page || 20;
       const offset = (page - 1) * pageSize;
       const paginatedPasses = allPasses.slice(offset, offset + pageSize);
       this.logger.log(`Returning ${paginatedPasses.length} passes for page ${page} (out of ${totalPasses} total)`);
