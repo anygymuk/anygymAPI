@@ -2218,6 +2218,30 @@ export class UsersService {
     }
   }
 
+  /** AnyGym adds 15% on top of gym price_per_pass for free-tier pass purchases. */
+  private static readonly FREE_TIER_MARKUP_MULTIPLIER = 1.15;
+
+  private countDistinctMembersByTier(passes: GymPass[], tier: string): number {
+    const memberIds = new Set<string>();
+    for (const pass of passes) {
+      if (pass.subscriptionTier?.toLowerCase() === tier && pass.userId) {
+        memberIds.add(pass.userId);
+      }
+    }
+    return memberIds.size;
+  }
+
+  private getAdminRevenuePassCost(pass: GymPass): number | null {
+    if (pass.passCost == null) {
+      return null;
+    }
+    const cost = parseFloat(pass.passCost.toString());
+    if (pass.subscriptionTier?.toLowerCase() === 'free') {
+      return Math.round((cost / UsersService.FREE_TIER_MARKUP_MULTIPLIER) * 100) / 100;
+    }
+    return cost;
+  }
+
   async findAdminRevenue(auth0Id: string, filters: GetRevenueDto): Promise<AdminRevenueResponseDto> {
     try {
       this.logger.log(`Looking up admin revenue with auth0_id: ${auth0Id}, from_date: ${filters.from_date}, to_date: ${filters.to_date}, gym_id: ${filters.gym_id || 'none'}`);
@@ -2289,6 +2313,7 @@ export class UsersService {
               standard_members: 0,
               premium_members: 0,
               elite_members: 0,
+              free_members: 0,
             },
             passes: [],
             pagination: {
@@ -2316,6 +2341,7 @@ export class UsersService {
               standard_members: 0,
               premium_members: 0,
               elite_members: 0,
+              free_members: 0,
             },
             passes: [],
             pagination: {
@@ -2371,16 +2397,17 @@ export class UsersService {
       // Get all passes for revenue calculations (before pagination)
       const allPasses = await queryBuilder.getMany();
 
-      // Calculate revenue statistics from all passes
+      // Calculate revenue statistics from all passes (free-tier uses gym net after AnyGym markup)
       const totalRevenue = allPasses.reduce((sum, pass) => {
-        const cost = pass.passCost ? parseFloat(pass.passCost.toString()) : 0;
-        return sum + cost;
+        const cost = this.getAdminRevenuePassCost(pass);
+        return sum + (cost ?? 0);
       }, 0);
 
-      // Count members by subscription tier (case-insensitive comparison) from all passes
-      const standardMembers = allPasses.filter(p => p.subscriptionTier?.toLowerCase() === 'standard').length;
-      const premiumMembers = allPasses.filter(p => p.subscriptionTier?.toLowerCase() === 'premium').length;
-      const eliteMembers = allPasses.filter(p => p.subscriptionTier?.toLowerCase() === 'elite').length;
+      // Count distinct members by subscription tier (case-insensitive) from all passes
+      const standardMembers = this.countDistinctMembersByTier(allPasses, 'standard');
+      const premiumMembers = this.countDistinctMembersByTier(allPasses, 'premium');
+      const eliteMembers = this.countDistinctMembersByTier(allPasses, 'elite');
+      const freeMembers = this.countDistinctMembersByTier(allPasses, 'free');
 
       // Paginate passes (20 per page)
       const page = filters.page || 1;
@@ -2411,7 +2438,7 @@ export class UsersService {
         used_at: formatDate(pass.usedAt),
         created_at: pass.createdAt,
         subscription_tier: pass.subscriptionTier || null,
-        pass_cost: pass.passCost ? parseFloat(pass.passCost.toString()) : null,
+        pass_cost: this.getAdminRevenuePassCost(pass),
       }));
 
       // Calculate result_set string
@@ -2426,6 +2453,7 @@ export class UsersService {
           standard_members: standardMembers,
           premium_members: premiumMembers,
           elite_members: eliteMembers,
+          free_members: freeMembers,
         },
         passes: passesDto,
         pagination: {

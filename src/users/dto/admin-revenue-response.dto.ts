@@ -18,6 +18,7 @@ export class AdminRevenueResponseDto {
     standard_members: number;
     premium_members: number;
     elite_members: number;
+    free_members: number;
   };
   passes: AdminRevenuePassDto[];
   pagination: {
