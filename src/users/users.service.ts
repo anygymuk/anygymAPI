@@ -118,12 +118,41 @@ export class UsersService {
     };
   }
 
-  private async resolveMembership(auth0Id: string): Promise<MembershipResponseDto | null> {
-    const activeSubscription = await this.subscriptionsService.findActiveSubscription(auth0Id);
-    if (!activeSubscription) {
-      return null;
+  private buildInferredFreeMembership(user: User): MembershipResponseDto {
+    return {
+      id: 0,
+      user_id: user.auth0Id,
+      tier: 'free',
+      status: 'active',
+      monthly_limit: 0,
+      visits_used: 0,
+      guest_passes_limit: 0,
+      guest_passes_used: 0,
+      price: 0,
+      stripe_subscription_id: null,
+      stripe_customer_id: user.stripeCustomerId || null,
+      current_period_start: null,
+      current_period_end: null,
+      next_billing_date: null,
+      created_at: null,
+      updated_at: null,
+    };
+  }
+
+  private async resolveMembershipForUser(user: User): Promise<MembershipResponseDto | null> {
+    const activeSubscription = await this.subscriptionsService.findActiveSubscription(user.auth0Id);
+    if (activeSubscription) {
+      return this.subscriptionsService.formatMembership(activeSubscription);
     }
-    return this.subscriptionsService.formatMembership(activeSubscription);
+
+    if (user.onboardingCompleted) {
+      this.logger.log(
+        `No active subscription for ${user.auth0Id}; inferring free tier from onboarding_completed`,
+      );
+      return this.buildInferredFreeMembership(user);
+    }
+
+    return null;
   }
 
   async findOneByAuth0Id(auth0Id: string): Promise<UserResponseDto> {
@@ -185,14 +214,17 @@ export class UsersService {
 
       let membership: MembershipResponseDto | null = null;
       try {
-        membership = await this.resolveMembership(auth0Id);
+        membership = await this.resolveMembershipForUser(user);
         if (membership) {
-          this.logger.log(`Active subscription found for user ${auth0Id}, tier: ${membership.tier}`);
+          this.logger.log(`Membership resolved for user ${auth0Id}, tier: ${membership.tier}`);
         } else {
-          this.logger.log(`No active subscription found for user ${auth0Id}`);
+          this.logger.log(`No membership for user ${auth0Id}`);
         }
       } catch (subscriptionError) {
         this.logger.warn(`Error fetching subscription for user ${auth0Id}: ${subscriptionError.message}`);
+        if (user.onboardingCompleted) {
+          membership = this.buildInferredFreeMembership(user);
+        }
       }
 
       return this.buildUserResponseDto(user, membership);
