@@ -12,16 +12,17 @@ import { User } from '../users/entities/user.entity';
 import { Auth0Guard } from '../users/guards/auth0.guard';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { UsersModule } from '../users/users.module';
-import { SendGridService } from './services/sendgrid.service';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([GymPass, PassPurchase, Gym, PassPricing, Subscription, Event, User]),
     SubscriptionsModule,
     forwardRef(() => UsersModule),
+    EmailModule,
   ],
   controllers: [PassesController],
-  providers: [PassesService, Auth0Guard, SendGridService],
+  providers: [PassesService, Auth0Guard],
   exports: [PassesService],
 })
 export class PassesModule {}

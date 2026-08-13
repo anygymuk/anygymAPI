@@ -36,7 +36,12 @@ API for the anygym frontend to communicate with the database, Stripe, Auth0, and
    CONTENTFUL_ENVIRONMENT=master  # Optional, defaults to 'master'
    PASS_EXPIRY_CRON_ENABLED=true  # Optional, defaults to true
 
-   # SendGrid (optional — form emails skipped when unset)
+   # Resend (pass confirmation emails)
+   RESEND_API_KEY=your_resend_api_key
+   RESEND_FROM_EMAIL=Info <info@app.any-gym.com>
+   RESEND_PASS_TEMPLATE_ID=new-pass  # Optional, defaults to new-pass
+
+   # SendGrid (welcome + form emails — being migrated)
    SENDGRID_API_KEY=your_sendgrid_api_key
    SENDGRID_FROM_EMAIL=hello@any-gym.com
    FORM_NOTIFICATION_EMAIL=team@any-gym.com

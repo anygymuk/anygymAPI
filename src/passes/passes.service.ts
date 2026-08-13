@@ -23,7 +23,7 @@ import { Event } from '../users/entities/event.entity';
 import { User } from '../users/entities/user.entity';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { UsersService } from '../users/users.service';
-import { SendGridService } from './services/sendgrid.service';
+import { EmailService } from '../email/email.service';
 
 export interface CreateGymPassOptions {
   auth0Id: string;
@@ -60,7 +60,7 @@ export class PassesService {
     private userRepository: Repository<User>,
     private subscriptionsService: SubscriptionsService,
     private usersService: UsersService,
-    private sendGridService: SendGridService,
+    private emailService: EmailService,
     private dataSource: DataSource,
   ) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -306,17 +306,16 @@ export class PassesService {
     }
 
     if (sendEmail) {
-      this.sendGridService.sendPassEmail({
+      this.emailService.sendPassEmail({
         to: user.email,
-        recipientName: user.full_name || 'Valued Member',
-        gymName: gym.name,
-        passQr: qrCodeUrl,
-        passCode,
-        gymAddress: gym.address,
-        gymPostcode: gym.postcode,
-        gymCity: gym.city,
-        gymLng: parseFloat(gym.longitude.toString()),
-        gymLat: parseFloat(gym.latitude.toString()),
+        recipient_name: user.full_name || 'Valued Member',
+        gym_name: gym.name,
+        pass_id: passCode,
+        gym_address: gym.address,
+        gym_postcode: gym.postcode,
+        gym_city: gym.city,
+        gym_lng: parseFloat(gym.longitude.toString()),
+        gym_lat: parseFloat(gym.latitude.toString()),
       }).catch((emailError) => {
         this.logger.error(`Failed to send pass email: ${emailError.message}`, emailError.stack);
       });
