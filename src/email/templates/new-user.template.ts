@@ -20,7 +20,7 @@ export const NEW_USER_EMAIL_TEMPLATE_ID =
   process.env.RESEND_NEW_USER_TEMPLATE_ID ?? 'new-user';
 
 export function buildNewUserEmailSubject(membershipName: string): string {
-  return `Welcome to AnyGym — ${membershipName} membership`;
+  return `Welcome to your anygym ${membershipName} membership`;
 }
 
 function gymVariables(
