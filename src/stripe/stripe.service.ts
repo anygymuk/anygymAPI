@@ -10,6 +10,7 @@ import { PassesService } from '../passes/passes.service';
 import { GeocodingService } from './services/geocoding.service';
 import { EmailService } from '../email/email.service';
 import { SendGridService } from '../passes/services/sendgrid.service';
+import { toNewUserGymData } from '../email/templates/gym-email.utils';
 
 @Injectable()
 export class StripeService {
@@ -347,14 +348,7 @@ export class StripeService {
       const isNewCustomer = previousSubscriptions === 0;
 
       // Step 10: Prepare gym data for email (ensure we always have 3 gyms when possible)
-      const gymData = closestGyms.slice(0, 3).map((gym) => ({
-        name: gym.name,
-        address: gym.address,
-        postcode: gym.postcode,
-        city: gym.city,
-        url: `${process.env.FRONTEND_URL || 'https://any-gym.com'}/gyms/${gym.id}`,
-        image: gym.gymChain?.logo || '',
-      }));
+      const gymData = closestGyms.slice(0, 3).map((gym) => toNewUserGymData(gym));
 
       // Step 11: Send welcome email with gym data
       if (isNewCustomer) {

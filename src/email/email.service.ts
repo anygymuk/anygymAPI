@@ -72,6 +72,7 @@ export class EmailService {
     }
 
     const { to, ...templateData } = data;
+    const variables = toNewUserEmailTemplateVariables(templateData);
 
     try {
       const result = await this.resend.emails.send({
@@ -80,7 +81,7 @@ export class EmailService {
         subject: buildNewUserEmailSubject(templateData.membership_name),
         template: {
           id: NEW_USER_EMAIL_TEMPLATE_ID,
-          variables: toNewUserEmailTemplateVariables(templateData),
+          variables,
         },
       });
 
@@ -89,7 +90,7 @@ export class EmailService {
       }
 
       this.logger.log(
-        `New user email sent successfully to ${to} using template "${NEW_USER_EMAIL_TEMPLATE_ID}"`,
+        `New user email sent successfully to ${to} using template "${NEW_USER_EMAIL_TEMPLATE_ID}" (gym_1_image=${variables.gym_1_image || 'empty'})`,
       );
     } catch (error) {
       this.logger.error(`Error sending new user email: ${error.message}`, error.stack);
