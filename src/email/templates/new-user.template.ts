@@ -36,13 +36,6 @@ function gymVariables(
     [`${prefix}_city`]: gym?.city ?? '',
     [`${prefix}_url`]: gym?.url ?? '',
     [`${prefix}_image`]: gym?.image ?? '',
-    // SendGrid-compatible aliases for migrated templates
-    [`Gym_${index}_Name`]: gym?.name ?? '',
-    [`Gym_${index}_Address`]: gym?.address ?? '',
-    [`Gym_${index}_Postcode`]: gym?.postcode ?? '',
-    [`Gym_${index}_City`]: gym?.city ?? '',
-    [`Gym_${index}_Url`]: gym?.url ?? '',
-    [`Gym_${index}_Image`]: gym?.image ?? '',
   };
 }
 
@@ -52,8 +45,6 @@ export function toNewUserEmailTemplateVariables(
   return {
     recipient_name: data.recipient_name,
     membership_name: data.membership_name,
-    Recipient_Name: data.recipient_name,
-    Membership_Name: data.membership_name,
     ...gymVariables(1, data.gym_1),
     ...gymVariables(2, data.gym_2),
     ...gymVariables(3, data.gym_3),
