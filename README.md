@@ -40,6 +40,7 @@ API for the anygym frontend to communicate with the database, Stripe, Auth0, and
    RESEND_API_KEY=your_resend_api_key
    RESEND_FROM_EMAIL=Info <info@app.any-gym.com>
    RESEND_PASS_TEMPLATE_ID=new-pass  # Optional, defaults to new-pass
+   RESEND_NEW_USER_TEMPLATE_ID=new-user  # Optional, defaults to new-user
 
    # SendGrid (welcome + form emails — being migrated)
    SENDGRID_API_KEY=your_sendgrid_api_key

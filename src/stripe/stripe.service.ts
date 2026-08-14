@@ -8,6 +8,7 @@ import { Gym } from '../gyms/entities/gym.entity';
 import { PassPurchase } from '../passes/entities/pass-purchase.entity';
 import { PassesService } from '../passes/passes.service';
 import { GeocodingService } from './services/geocoding.service';
+import { EmailService } from '../email/email.service';
 import { SendGridService } from '../passes/services/sendgrid.service';
 
 @Injectable()
@@ -27,6 +28,7 @@ export class StripeService {
     @Inject(forwardRef(() => PassesService))
     private passesService: PassesService,
     private geocodingService: GeocodingService,
+    private emailService: EmailService,
     private sendGridService: SendGridService,
   ) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -355,16 +357,26 @@ export class StripeService {
       }));
 
       // Step 11: Send welcome email with gym data
-      // For template d-e38fefb021e84d0a9a427f2c7b11a397 (non-new customers), ensure gym data is included
-      await this.sendGridService.sendWelcomeEmail({
-        to: user.email,
-        recipientName: user.fullName || 'Valued Member',
-        membershipName: tier.charAt(0).toUpperCase() + tier.slice(1),
-        gym1: gymData[0],
-        gym2: gymData[1],
-        gym3: gymData[2],
-        isNewCustomer,
-      });
+      if (isNewCustomer) {
+        await this.emailService.sendNewUserEmail({
+          to: user.email,
+          recipient_name: user.fullName || 'Valued Member',
+          membership_name: tier.charAt(0).toUpperCase() + tier.slice(1),
+          gym_1: gymData[0],
+          gym_2: gymData[1],
+          gym_3: gymData[2],
+        });
+      } else {
+        await this.sendGridService.sendWelcomeEmail({
+          to: user.email,
+          recipientName: user.fullName || 'Valued Member',
+          membershipName: tier.charAt(0).toUpperCase() + tier.slice(1),
+          gym1: gymData[0],
+          gym2: gymData[1],
+          gym3: gymData[2],
+          isNewCustomer: false,
+        });
+      }
 
       this.logger.log(`Checkout session processed successfully: ${session.id}`);
     } catch (error) {

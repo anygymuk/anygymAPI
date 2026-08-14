@@ -6,6 +6,12 @@ import {
   buildPassEmailSubject,
   toPassEmailTemplateVariables,
 } from './templates/pass-email.template';
+import {
+  NewUserEmailTemplateData,
+  NEW_USER_EMAIL_TEMPLATE_ID,
+  buildNewUserEmailSubject,
+  toNewUserEmailTemplateVariables,
+} from './templates/new-user.template';
 
 @Injectable()
 export class EmailService {
@@ -56,6 +62,37 @@ export class EmailService {
       );
     } catch (error) {
       this.logger.error(`Error sending pass email: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  async sendNewUserEmail(data: NewUserEmailTemplateData & { to: string }): Promise<void> {
+    if (!this.resend) {
+      throw new Error('Resend is not configured');
+    }
+
+    const { to, ...templateData } = data;
+
+    try {
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to,
+        subject: buildNewUserEmailSubject(templateData.membership_name),
+        template: {
+          id: NEW_USER_EMAIL_TEMPLATE_ID,
+          variables: toNewUserEmailTemplateVariables(templateData),
+        },
+      });
+
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      this.logger.log(
+        `New user email sent successfully to ${to} using template "${NEW_USER_EMAIL_TEMPLATE_ID}"`,
+      );
+    } catch (error) {
+      this.logger.error(`Error sending new user email: ${error.message}`, error.stack);
       throw error;
     }
   }

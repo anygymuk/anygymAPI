@@ -8,6 +8,7 @@ import { Gym } from '../gyms/entities/gym.entity';
 import { PassPurchase } from '../passes/entities/pass-purchase.entity';
 import { GymPass } from '../passes/entities/gym-pass.entity';
 import { GeocodingService } from './services/geocoding.service';
+import { EmailModule } from '../email/email.module';
 import { SendGridService } from '../passes/services/sendgrid.service';
 import { PassesModule } from '../passes/passes.module';
 
@@ -15,6 +16,7 @@ import { PassesModule } from '../passes/passes.module';
   imports: [
     TypeOrmModule.forFeature([User, Subscription, Gym, PassPurchase, GymPass]),
     forwardRef(() => PassesModule),
+    EmailModule,
   ],
   controllers: [StripeController],
   providers: [StripeService, GeocodingService, SendGridService],
