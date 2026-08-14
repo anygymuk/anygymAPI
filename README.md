@@ -25,28 +25,7 @@ API for the anygym frontend to communicate with the database, Stripe, Auth0, and
    npm install
    ```
 
-3. Create a `.env` file in the root directory:
-   ```env
-   DATABASE_URL=postgresql://neondb_owner:npg_9AoyHslGRzh2@ep-aged-dream-ab20se75-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-   PORT=3000
-   
-   # Contentful Configuration (required for content endpoints)
-   CONTENTFUL_SPACE_ID=your_contentful_space_id
-   CONTENTFUL_ACCESS_TOKEN=your_contentful_access_token
-   CONTENTFUL_ENVIRONMENT=master  # Optional, defaults to 'master'
-   PASS_EXPIRY_CRON_ENABLED=true  # Optional, defaults to true
-
-   # Resend (pass confirmation emails)
-   RESEND_API_KEY=your_resend_api_key
-   RESEND_FROM_EMAIL=Info <info@app.any-gym.com>
-   RESEND_PASS_TEMPLATE_ID=new-pass  # Optional, defaults to new-pass
-   RESEND_NEW_USER_TEMPLATE_ID=new-user  # Optional, defaults to new-user
-
-   # SendGrid (welcome + form emails — being migrated)
-   SENDGRID_API_KEY=your_sendgrid_api_key
-   SENDGRID_FROM_EMAIL=hello@any-gym.com
-   FORM_NOTIFICATION_EMAIL=team@any-gym.com
-   ```
+3. Create a `.env` file in the root directory
 
 ### Database migrations
 
