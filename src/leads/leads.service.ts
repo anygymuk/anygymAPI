@@ -59,14 +59,25 @@ export class LeadsService {
       }
     }
 
-    let emailSent = false;
     if (this.leadsEmailService.isInternalNotificationConfigured()) {
       try {
         await this.leadsEmailService.sendNewsletterNotification(dto.email);
+      } catch (error) {
+        this.logger.error(
+          `Newsletter internal notification error: ${error.message}`,
+          error.stack,
+        );
+      }
+    }
+
+    let emailSent = false;
+    if (this.leadsEmailService.isExternalNotificationConfigured()) {
+      try {
+        await this.leadsEmailService.sendNewsletterConfirmation(dto.email);
         emailSent = true;
       } catch (error) {
         this.logger.error(
-          `Newsletter email error: ${error.message}`,
+          `Newsletter confirmation email error: ${error.message}`,
           error.stack,
         );
       }
@@ -93,14 +104,25 @@ export class LeadsService {
       throw new InternalServerErrorException({ error: GENERIC_ERROR });
     }
 
-    let emailSent = false;
     if (this.leadsEmailService.isInternalNotificationConfigured()) {
       try {
         await this.leadsEmailService.sendGymGroupNotification(dto);
+      } catch (error) {
+        this.logger.error(
+          `Gym group internal notification error: ${error.message}`,
+          error.stack,
+        );
+      }
+    }
+
+    let emailSent = false;
+    if (this.leadsEmailService.isExternalNotificationConfigured()) {
+      try {
+        await this.leadsEmailService.sendGymGroupConfirmation(dto.email);
         emailSent = true;
       } catch (error) {
         this.logger.error(
-          `Gym group email error: ${error.message}`,
+          `Gym group confirmation email error: ${error.message}`,
           error.stack,
         );
       }
@@ -110,20 +132,21 @@ export class LeadsService {
   }
 
   async submitInvestor(dto: InvestorDto): Promise<FormSuccessResponseDto> {
-    let packSent = false;
+    let externalSent = false;
     let notificationSent = false;
 
-    const packConfigured = this.leadsEmailService.isInvestorPackConfigured();
+    const externalConfigured =
+      this.leadsEmailService.isExternalNotificationConfigured();
     const notificationConfigured =
       this.leadsEmailService.isInternalNotificationConfigured();
 
-    if (packConfigured) {
+    if (externalConfigured) {
       try {
-        await this.leadsEmailService.sendInvestorPack(dto.email, dto.fullName);
-        packSent = true;
+        await this.leadsEmailService.sendInvestorConfirmation(dto.email);
+        externalSent = true;
       } catch (error) {
         this.logger.error(
-          `Investor pack email error: ${error.message}`,
+          `Investor confirmation email error: ${error.message}`,
           error.stack,
         );
       }
@@ -149,7 +172,7 @@ export class LeadsService {
         company: dto.company ?? null,
         investmentRange: dto.investmentRange ?? null,
         message: dto.message ?? null,
-        investorPackSent: packSent,
+        investorPackSent: externalSent,
       });
       saved = true;
     } catch (error) {
@@ -157,9 +180,9 @@ export class LeadsService {
       throw new InternalServerErrorException({ error: GENERIC_ERROR });
     }
 
-    const anyEmailConfigured = packConfigured || notificationConfigured;
+    const anyEmailConfigured = externalConfigured || notificationConfigured;
     const emailSent =
-      (!packConfigured || packSent) &&
+      (!externalConfigured || externalSent) &&
       (!notificationConfigured || notificationSent);
     if (anyEmailConfigured && !emailSent) {
       throw new HttpException({ error: GENERIC_ERROR }, HttpStatus.INTERNAL_SERVER_ERROR);

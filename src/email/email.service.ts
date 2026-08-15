@@ -18,6 +18,12 @@ import {
   buildInternalNotificationSubject,
   toInternalNotificationTemplateVariables,
 } from './templates/internal-notification.template';
+import {
+  ExternalNotificationTemplateData,
+  EXTERNAL_NOTIFICATION_TEMPLATE_ID,
+  buildExternalNotificationSubject,
+  toExternalNotificationTemplateVariables,
+} from './templates/external-notification.template';
 
 @Injectable()
 export class EmailService {
@@ -141,6 +147,42 @@ export class EmailService {
     } catch (error) {
       this.logger.error(
         `Error sending internal notification: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  async sendExternalNotification(
+    data: ExternalNotificationTemplateData & { to: string },
+  ): Promise<void> {
+    if (!this.resend) {
+      throw new Error('Resend is not configured');
+    }
+
+    const { to, ...templateData } = data;
+
+    try {
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to,
+        subject: buildExternalNotificationSubject(templateData.notification_subject),
+        template: {
+          id: EXTERNAL_NOTIFICATION_TEMPLATE_ID,
+          variables: toExternalNotificationTemplateVariables(templateData),
+        },
+      });
+
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      this.logger.log(
+        `External notification sent successfully to ${to} using template "${EXTERNAL_NOTIFICATION_TEMPLATE_ID}" (${templateData.notification_subject})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error sending external notification: ${error.message}`,
         error.stack,
       );
       throw error;

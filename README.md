@@ -270,24 +270,30 @@ Submit an investor enquiry.
 }
 ```
 
-Newsletter and gym-group submissions are persisted first; if email delivery fails the request still succeeds with `emailSent: false`. Investor enquiries return 500 when email delivery is configured but fails (investor pack via SendGrid, internal notification via Resend), even if the row was saved.
+Newsletter and gym-group submissions are persisted first; if the external confirmation email fails the request still succeeds with `emailSent: false`. Internal notifications to the ops inbox are best-effort and do not affect `emailSent`. Investor enquiries return 500 when configured email delivery fails (external confirmation or internal notification via Resend), even if the row was saved.
+
+The `emailSent` field reflects whether the external confirmation email was sent to the submitter.
 
 ### Email environment variables
 
-Lead form notifications (newsletter, gym group, investor enquiry) are sent to a fixed internal address using the Resend `internal-notification` template:
+Lead forms send two Resend emails on success:
+
+1. **Internal notification** — ops inbox via `internal-notification` template → `FORM_NOTIFICATION_EMAIL`
+2. **External confirmation** — submitter via `external-notification` template → request email address
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `RESEND_API_KEY` | Yes (for lead notifications) | Resend API key |
+| `RESEND_API_KEY` | Yes (for lead emails) | Resend API key |
 | `RESEND_FROM_EMAIL` | No | Sender address; defaults to `Info <info@app.any-gym.com>` |
-| `FORM_NOTIFICATION_EMAIL` | Yes (for lead notifications) | Recipient for all internal lead notifications |
+| `FORM_NOTIFICATION_EMAIL` | Yes (for internal notifications) | Recipient for internal lead notifications |
 | `RESEND_INTERNAL_NOTIFICATION_TEMPLATE_ID` | No | Resend template ID; defaults to `internal-notification` |
+| `RESEND_EXTERNAL_NOTIFICATION_TEMPLATE_ID` | No | Resend template ID; defaults to `external-notification` |
 
-The investor pack auto-reply to the submitter still uses SendGrid:
+SendGrid is still used for returning-subscriber welcome emails (Stripe checkout):
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `SENDGRID_API_KEY` | Yes (for investor pack) | SendGrid API key |
+| `SENDGRID_API_KEY` | Yes (for returning welcome) | SendGrid API key |
 | `SENDGRID_FROM_EMAIL` | No | Sender address for SendGrid emails |
 
 ## Notes

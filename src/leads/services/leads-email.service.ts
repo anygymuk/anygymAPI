@@ -1,6 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const sgMail = require('@sendgrid/mail');
 import { EmailService } from '../../email/email.service';
 import {
   buildGymGroupNotificationBody,
@@ -10,29 +8,27 @@ import {
   INVESTOR_NOTIFICATION_SUBJECT,
   NEWSLETTER_NOTIFICATION_SUBJECT,
 } from './lead-notification-body.utils';
+import {
+  GYM_GROUP_CONFIRMATION_BODY,
+  GYM_GROUP_CONFIRMATION_SUBJECT,
+  INVESTOR_CONFIRMATION_BODY,
+  INVESTOR_CONFIRMATION_SUBJECT,
+  NEWSLETTER_CONFIRMATION_BODY,
+  NEWSLETTER_CONFIRMATION_SUBJECT,
+} from './lead-external-notification.utils';
 
 @Injectable()
 export class LeadsEmailService {
   private readonly logger = new Logger(LeadsEmailService.name);
-  private readonly sendGridConfigured: boolean;
 
-  constructor(private readonly emailService: EmailService) {
-    const apiKey = process.env.SENDGRID_API_KEY;
-    if (apiKey) {
-      sgMail.setApiKey(apiKey);
-      this.sendGridConfigured = true;
-    } else {
-      this.logger.warn('SENDGRID_API_KEY not set — investor pack emails will be skipped');
-      this.sendGridConfigured = false;
-    }
-  }
+  constructor(private readonly emailService: EmailService) {}
 
   isInternalNotificationConfigured(): boolean {
     return this.emailService.isInternalNotificationConfigured();
   }
 
-  isInvestorPackConfigured(): boolean {
-    return this.sendGridConfigured;
+  isExternalNotificationConfigured(): boolean {
+    return this.emailService.isConfigured();
   }
 
   async sendNewsletterNotification(email: string): Promise<void> {
@@ -45,6 +41,19 @@ export class LeadsEmailService {
       notification_body: buildNewsletterNotificationBody(email),
     });
     this.logger.log('Newsletter notification email sent');
+  }
+
+  async sendNewsletterConfirmation(to: string): Promise<void> {
+    if (!this.isExternalNotificationConfigured()) {
+      return;
+    }
+
+    await this.emailService.sendExternalNotification({
+      to,
+      notification_subject: NEWSLETTER_CONFIRMATION_SUBJECT,
+      notification_body: NEWSLETTER_CONFIRMATION_BODY,
+    });
+    this.logger.log('Newsletter confirmation email sent');
   }
 
   async sendGymGroupNotification(data: {
@@ -66,6 +75,19 @@ export class LeadsEmailService {
     this.logger.log('Gym group notification email sent');
   }
 
+  async sendGymGroupConfirmation(to: string): Promise<void> {
+    if (!this.isExternalNotificationConfigured()) {
+      return;
+    }
+
+    await this.emailService.sendExternalNotification({
+      to,
+      notification_subject: GYM_GROUP_CONFIRMATION_SUBJECT,
+      notification_body: GYM_GROUP_CONFIRMATION_BODY,
+    });
+    this.logger.log('Gym group confirmation email sent');
+  }
+
   async sendInvestorNotification(data: {
     fullName: string;
     email: string;
@@ -84,31 +106,16 @@ export class LeadsEmailService {
     this.logger.log('Investor notification email sent');
   }
 
-  async sendInvestorPack(to: string, fullName: string): Promise<void> {
-    if (!this.sendGridConfigured) {
+  async sendInvestorConfirmation(to: string): Promise<void> {
+    if (!this.isExternalNotificationConfigured()) {
       return;
     }
 
-    const from = this.getFromEmail();
-    await sgMail.send({
+    await this.emailService.sendExternalNotification({
       to,
-      from,
-      subject: 'AnyGym investor information',
-      text: [
-        `Hi ${fullName},`,
-        '',
-        'Thank you for your interest in AnyGym.',
-        '',
-        'Our team will be in touch shortly with our investor pack and next steps.',
-        '',
-        'Best regards,',
-        'The AnyGym Team',
-      ].join('\n'),
+      notification_subject: INVESTOR_CONFIRMATION_SUBJECT,
+      notification_body: INVESTOR_CONFIRMATION_BODY,
     });
-    this.logger.log('Investor pack email sent');
-  }
-
-  private getFromEmail(): string {
-    return process.env.SENDGRID_FROM_EMAIL ?? 'naaman@any-gym.com';
+    this.logger.log('Investor confirmation email sent');
   }
 }
