@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EmailModule } from '../email/email.module';
 import { LeadsController } from './leads.controller';
 import { LeadsService } from './leads.service';
 import { NewsletterSubscription } from './entities/newsletter-subscription.entity';
@@ -10,6 +11,7 @@ import { RateLimitGuard } from './guards/rate-limit.guard';
 
 @Module({
   imports: [
+    EmailModule,
     TypeOrmModule.forFeature([
       NewsletterSubscription,
       GymGroupEnquiry,

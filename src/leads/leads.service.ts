@@ -60,7 +60,7 @@ export class LeadsService {
     }
 
     let emailSent = false;
-    if (this.leadsEmailService.isConfigured()) {
+    if (this.leadsEmailService.isInternalNotificationConfigured()) {
       try {
         await this.leadsEmailService.sendNewsletterNotification(dto.email);
         emailSent = true;
@@ -94,7 +94,7 @@ export class LeadsService {
     }
 
     let emailSent = false;
-    if (this.leadsEmailService.isConfigured()) {
+    if (this.leadsEmailService.isInternalNotificationConfigured()) {
       try {
         await this.leadsEmailService.sendGymGroupNotification(dto);
         emailSent = true;
@@ -113,7 +113,11 @@ export class LeadsService {
     let packSent = false;
     let notificationSent = false;
 
-    if (this.leadsEmailService.isConfigured()) {
+    const packConfigured = this.leadsEmailService.isInvestorPackConfigured();
+    const notificationConfigured =
+      this.leadsEmailService.isInternalNotificationConfigured();
+
+    if (packConfigured) {
       try {
         await this.leadsEmailService.sendInvestorPack(dto.email, dto.fullName);
         packSent = true;
@@ -123,7 +127,9 @@ export class LeadsService {
           error.stack,
         );
       }
+    }
 
+    if (notificationConfigured) {
       try {
         await this.leadsEmailService.sendInvestorNotification(dto);
         notificationSent = true;
@@ -151,8 +157,11 @@ export class LeadsService {
       throw new InternalServerErrorException({ error: GENERIC_ERROR });
     }
 
-    const emailSent = packSent && notificationSent;
-    if (this.leadsEmailService.isConfigured() && !emailSent) {
+    const anyEmailConfigured = packConfigured || notificationConfigured;
+    const emailSent =
+      (!packConfigured || packSent) &&
+      (!notificationConfigured || notificationSent);
+    if (anyEmailConfigured && !emailSent) {
       throw new HttpException({ error: GENERIC_ERROR }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 

@@ -270,7 +270,25 @@ Submit an investor enquiry.
 }
 ```
 
-Newsletter and gym-group submissions are persisted first; if email delivery fails the request still succeeds with `emailSent: false`. Investor enquiries return 500 when SendGrid is configured but email delivery fails, even if the row was saved.
+Newsletter and gym-group submissions are persisted first; if email delivery fails the request still succeeds with `emailSent: false`. Investor enquiries return 500 when email delivery is configured but fails (investor pack via SendGrid, internal notification via Resend), even if the row was saved.
+
+### Email environment variables
+
+Lead form notifications (newsletter, gym group, investor enquiry) are sent to a fixed internal address using the Resend `internal-notification` template:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `RESEND_API_KEY` | Yes (for lead notifications) | Resend API key |
+| `RESEND_FROM_EMAIL` | No | Sender address; defaults to `Info <info@app.any-gym.com>` |
+| `FORM_NOTIFICATION_EMAIL` | Yes (for lead notifications) | Recipient for all internal lead notifications |
+| `RESEND_INTERNAL_NOTIFICATION_TEMPLATE_ID` | No | Resend template ID; defaults to `internal-notification` |
+
+The investor pack auto-reply to the submitter still uses SendGrid:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SENDGRID_API_KEY` | Yes (for investor pack) | SendGrid API key |
+| `SENDGRID_FROM_EMAIL` | No | Sender address for SendGrid emails |
 
 ## Notes
 

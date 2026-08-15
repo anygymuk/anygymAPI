@@ -12,6 +12,12 @@ import {
   buildNewUserEmailSubject,
   toNewUserEmailTemplateVariables,
 } from './templates/new-user.template';
+import {
+  InternalNotificationTemplateData,
+  INTERNAL_NOTIFICATION_TEMPLATE_ID,
+  buildInternalNotificationSubject,
+  toInternalNotificationTemplateVariables,
+} from './templates/internal-notification.template';
 
 @Injectable()
 export class EmailService {
@@ -33,6 +39,10 @@ export class EmailService {
 
   isConfigured(): boolean {
     return this.resend !== null;
+  }
+
+  isInternalNotificationConfigured(): boolean {
+    return this.resend !== null && Boolean(process.env.FORM_NOTIFICATION_EMAIL);
   }
 
   async sendPassEmail(data: PassEmailTemplateData & { to: string }): Promise<void> {
@@ -94,6 +104,45 @@ export class EmailService {
       );
     } catch (error) {
       this.logger.error(`Error sending new user email: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  async sendInternalNotification(
+    data: InternalNotificationTemplateData,
+  ): Promise<void> {
+    if (!this.resend) {
+      throw new Error('Resend is not configured');
+    }
+
+    const to = process.env.FORM_NOTIFICATION_EMAIL;
+    if (!to) {
+      throw new Error('FORM_NOTIFICATION_EMAIL is not configured');
+    }
+
+    try {
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to,
+        subject: buildInternalNotificationSubject(data.notification_subject),
+        template: {
+          id: INTERNAL_NOTIFICATION_TEMPLATE_ID,
+          variables: toInternalNotificationTemplateVariables(data),
+        },
+      });
+
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      this.logger.log(
+        `Internal notification sent successfully to ${to} using template "${INTERNAL_NOTIFICATION_TEMPLATE_ID}" (${data.notification_subject})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error sending internal notification: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }

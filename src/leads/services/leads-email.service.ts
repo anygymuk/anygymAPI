@@ -1,39 +1,48 @@
 import { Injectable, Logger } from '@nestjs/common';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const sgMail = require('@sendgrid/mail');
+import { EmailService } from '../../email/email.service';
+import {
+  buildGymGroupNotificationBody,
+  buildInvestorNotificationBody,
+  buildNewsletterNotificationBody,
+  GYM_GROUP_NOTIFICATION_SUBJECT,
+  INVESTOR_NOTIFICATION_SUBJECT,
+  NEWSLETTER_NOTIFICATION_SUBJECT,
+} from './lead-notification-body.utils';
 
 @Injectable()
 export class LeadsEmailService {
   private readonly logger = new Logger(LeadsEmailService.name);
-  private readonly apiKeyConfigured: boolean;
+  private readonly sendGridConfigured: boolean;
 
-  constructor() {
+  constructor(private readonly emailService: EmailService) {
     const apiKey = process.env.SENDGRID_API_KEY;
     if (apiKey) {
       sgMail.setApiKey(apiKey);
-      this.apiKeyConfigured = true;
+      this.sendGridConfigured = true;
     } else {
-      this.logger.warn('SENDGRID_API_KEY not set — form emails will be skipped');
-      this.apiKeyConfigured = false;
+      this.logger.warn('SENDGRID_API_KEY not set — investor pack emails will be skipped');
+      this.sendGridConfigured = false;
     }
   }
 
-  isConfigured(): boolean {
-    return this.apiKeyConfigured;
+  isInternalNotificationConfigured(): boolean {
+    return this.emailService.isInternalNotificationConfigured();
+  }
+
+  isInvestorPackConfigured(): boolean {
+    return this.sendGridConfigured;
   }
 
   async sendNewsletterNotification(email: string): Promise<void> {
-    const notificationEmail = process.env.FORM_NOTIFICATION_EMAIL;
-    if (!this.apiKeyConfigured || !notificationEmail) {
+    if (!this.isInternalNotificationConfigured()) {
       return;
     }
 
-    const from = this.getFromEmail();
-    await sgMail.send({
-      to: notificationEmail,
-      from,
-      subject: 'New newsletter subscription',
-      text: `A new newsletter subscription was received.\n\nEmail: ${email}`,
+    await this.emailService.sendInternalNotification({
+      notification_subject: NEWSLETTER_NOTIFICATION_SUBJECT,
+      notification_body: buildNewsletterNotificationBody(email),
     });
     this.logger.log('Newsletter notification email sent');
   }
@@ -46,28 +55,13 @@ export class LeadsEmailService {
     phone?: string;
     message?: string;
   }): Promise<void> {
-    const notificationEmail = process.env.FORM_NOTIFICATION_EMAIL;
-    if (!this.apiKeyConfigured || !notificationEmail) {
+    if (!this.isInternalNotificationConfigured()) {
       return;
     }
 
-    const from = this.getFromEmail();
-    const lines = [
-      'A new gym group enquiry was received.',
-      '',
-      `Contact name: ${data.contactName}`,
-      `Email: ${data.email}`,
-      `Company: ${data.companyName}`,
-      `Locations: ${data.locations}`,
-    ];
-    if (data.phone) lines.push(`Phone: ${data.phone}`);
-    if (data.message) lines.push(`Message: ${data.message}`);
-
-    await sgMail.send({
-      to: notificationEmail,
-      from,
-      subject: `Gym group enquiry from ${data.companyName}`,
-      text: lines.join('\n'),
+    await this.emailService.sendInternalNotification({
+      notification_subject: GYM_GROUP_NOTIFICATION_SUBJECT,
+      notification_body: buildGymGroupNotificationBody(data),
     });
     this.logger.log('Gym group notification email sent');
   }
@@ -79,33 +73,19 @@ export class LeadsEmailService {
     investmentRange?: string;
     message?: string;
   }): Promise<void> {
-    const notificationEmail = process.env.FORM_NOTIFICATION_EMAIL;
-    if (!this.apiKeyConfigured || !notificationEmail) {
+    if (!this.isInternalNotificationConfigured()) {
       return;
     }
 
-    const from = this.getFromEmail();
-    const lines = [
-      'A new investor enquiry was received.',
-      '',
-      `Name: ${data.fullName}`,
-      `Email: ${data.email}`,
-    ];
-    if (data.company) lines.push(`Company: ${data.company}`);
-    if (data.investmentRange) lines.push(`Investment range: ${data.investmentRange}`);
-    if (data.message) lines.push(`Message: ${data.message}`);
-
-    await sgMail.send({
-      to: notificationEmail,
-      from,
-      subject: `Investor enquiry from ${data.fullName}`,
-      text: lines.join('\n'),
+    await this.emailService.sendInternalNotification({
+      notification_subject: INVESTOR_NOTIFICATION_SUBJECT,
+      notification_body: buildInvestorNotificationBody(data),
     });
     this.logger.log('Investor notification email sent');
   }
 
   async sendInvestorPack(to: string, fullName: string): Promise<void> {
-    if (!this.apiKeyConfigured) {
+    if (!this.sendGridConfigured) {
       return;
     }
 
