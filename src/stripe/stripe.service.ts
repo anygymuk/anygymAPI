@@ -9,7 +9,6 @@ import { PassPurchase } from '../passes/entities/pass-purchase.entity';
 import { PassesService } from '../passes/passes.service';
 import { GeocodingService } from './services/geocoding.service';
 import { EmailService } from '../email/email.service';
-import { SendGridService } from '../passes/services/sendgrid.service';
 import { toNewUserGymData } from '../email/templates/gym-email.utils';
 
 @Injectable()
@@ -30,7 +29,6 @@ export class StripeService {
     private passesService: PassesService,
     private geocodingService: GeocodingService,
     private emailService: EmailService,
-    private sendGridService: SendGridService,
   ) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
@@ -341,36 +339,18 @@ export class StripeService {
         );
       }
 
-      // Determine if this is a new customer (no previous subscriptions)
-      const previousSubscriptions = await this.subscriptionRepository.count({
-        where: { userId: auth0Id, status: 'cancelled' },
-      });
-      const isNewCustomer = previousSubscriptions === 0;
-
       // Step 10: Prepare gym data for email (ensure we always have 3 gyms when possible)
       const gymData = closestGyms.slice(0, 3).map((gym) => toNewUserGymData(gym));
 
       // Step 11: Send welcome email with gym data
-      if (isNewCustomer) {
-        await this.emailService.sendNewUserEmail({
-          to: user.email,
-          recipient_name: user.fullName || 'Valued Member',
-          membership_name: tier.charAt(0).toUpperCase() + tier.slice(1),
-          gym_1: gymData[0],
-          gym_2: gymData[1],
-          gym_3: gymData[2],
-        });
-      } else {
-        await this.sendGridService.sendWelcomeEmail({
-          to: user.email,
-          recipientName: user.fullName || 'Valued Member',
-          membershipName: tier.charAt(0).toUpperCase() + tier.slice(1),
-          gym1: gymData[0],
-          gym2: gymData[1],
-          gym3: gymData[2],
-          isNewCustomer: false,
-        });
-      }
+      await this.emailService.sendNewUserEmail({
+        to: user.email,
+        recipient_name: user.fullName || 'Valued Member',
+        membership_name: tier.charAt(0).toUpperCase() + tier.slice(1),
+        gym_1: gymData[0],
+        gym_2: gymData[1],
+        gym_3: gymData[2],
+      });
 
       this.logger.log(`Checkout session processed successfully: ${session.id}`);
     } catch (error) {

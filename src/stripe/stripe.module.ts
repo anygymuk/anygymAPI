@@ -9,7 +9,6 @@ import { PassPurchase } from '../passes/entities/pass-purchase.entity';
 import { GymPass } from '../passes/entities/gym-pass.entity';
 import { GeocodingService } from './services/geocoding.service';
 import { EmailModule } from '../email/email.module';
-import { SendGridService } from '../passes/services/sendgrid.service';
 import { PassesModule } from '../passes/passes.module';
 
 @Module({
@@ -19,7 +18,7 @@ import { PassesModule } from '../passes/passes.module';
     EmailModule,
   ],
   controllers: [StripeController],
-  providers: [StripeService, GeocodingService, SendGridService],
+  providers: [StripeService, GeocodingService],
   exports: [StripeService],
 })
 export class StripeModule {}

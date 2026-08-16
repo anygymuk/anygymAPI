@@ -1,7 +1,7 @@
 {
   "name": "anygym-api",
   "version": "1.0.0",
-  "description": "API for anygym frontend to communicate with database, Stripe, Auth0, and SendGrid",
+  "description": "API for anygym frontend to communicate with database, Stripe, Auth0, and Resend",
   "author": "",
   "private": true,
   "license": "UNLICENSED",
@@ -28,7 +28,6 @@
     "@nestjs/schedule": "^6.1.0",
     "@nestjs/swagger": "^7.4.2",
     "@nestjs/typeorm": "^10.0.0",
-    "@sendgrid/mail": "^8.1.0",
     "axios": "^1.6.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",

@@ -1,6 +1,6 @@
 # AnyGym API
 
-API for the anygym frontend to communicate with the database, Stripe, Auth0, and SendGrid.
+API for the anygym frontend to communicate with the database, Stripe, Auth0, and Resend.
 
 ## Tech Stack
 
@@ -288,13 +288,10 @@ Lead forms send two Resend emails on success:
 | `FORM_NOTIFICATION_EMAIL` | Yes (for internal notifications) | Recipient for internal lead notifications |
 | `RESEND_INTERNAL_NOTIFICATION_TEMPLATE_ID` | No | Resend template ID; defaults to `internal-notification` |
 | `RESEND_EXTERNAL_NOTIFICATION_TEMPLATE_ID` | No | Resend template ID; defaults to `external-notification` |
+| `RESEND_NEW_USER_TEMPLATE_ID` | No | Resend template ID for membership welcome emails; defaults to `new-user` |
+| `RESEND_PASS_TEMPLATE_ID` | No | Resend template ID for pass confirmation emails; defaults to `new-pass` |
 
-SendGrid is still used for returning-subscriber welcome emails (Stripe checkout):
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `SENDGRID_API_KEY` | Yes (for returning welcome) | SendGrid API key |
-| `SENDGRID_FROM_EMAIL` | No | Sender address for SendGrid emails |
+Stripe membership checkout (`checkout.session.completed`) sends the `new-user` welcome email to all subscribers. Single pass purchases send the `new-pass` confirmation email via pass fulfillment.
 
 ## Notes
 
