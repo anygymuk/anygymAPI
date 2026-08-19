@@ -118,38 +118,10 @@ export class UsersService {
     };
   }
 
-  private buildInferredFreeMembership(user: User): MembershipResponseDto {
-    return {
-      id: 0,
-      user_id: user.auth0Id,
-      tier: 'free',
-      status: 'active',
-      monthly_limit: 0,
-      visits_used: 0,
-      guest_passes_limit: 0,
-      guest_passes_used: 0,
-      price: 0,
-      stripe_subscription_id: null,
-      stripe_customer_id: user.stripeCustomerId || null,
-      current_period_start: null,
-      current_period_end: null,
-      next_billing_date: null,
-      created_at: null,
-      updated_at: null,
-    };
-  }
-
   private async resolveMembershipForUser(user: User): Promise<MembershipResponseDto | null> {
     const activeSubscription = await this.subscriptionsService.findActiveSubscription(user.auth0Id);
     if (activeSubscription) {
       return this.subscriptionsService.formatMembership(activeSubscription);
-    }
-
-    if (user.onboardingCompleted) {
-      this.logger.log(
-        `No active subscription for ${user.auth0Id}; inferring free tier from onboarding_completed`,
-      );
-      return this.buildInferredFreeMembership(user);
     }
 
     return null;
@@ -222,9 +194,6 @@ export class UsersService {
         }
       } catch (subscriptionError) {
         this.logger.warn(`Error fetching subscription for user ${auth0Id}: ${subscriptionError.message}`);
-        if (user.onboardingCompleted) {
-          membership = this.buildInferredFreeMembership(user);
-        }
       }
 
       return this.buildUserResponseDto(user, membership);
@@ -362,26 +331,12 @@ export class UsersService {
       }
 
       if (shouldAssignFreeTier) {
-        let stripeCustomerId = user.stripeCustomerId;
-        if (!stripeCustomerId) {
-          stripeCustomerId = await this.subscriptionsService.tryEnsureStripeCustomer(user);
-          if (stripeCustomerId) {
-            user.stripeCustomerId = stripeCustomerId;
-            await this.userRepository.save(user);
-          }
-        }
-
-        const freeSubscription = await this.subscriptionsService.assignFreeTier(
-          auth0Id,
-          stripeCustomerId,
+        this.logger.warn(
+          `assign_free_tier on PUT /user/update is deprecated; use POST /user/subscription/free`,
         );
-        const membership = this.subscriptionsService.formatMembership(freeSubscription);
-        this.logger.log(
-          `Free tier assigned for user ${auth0Id}: tier=${membership.tier}, status=${membership.status}`,
-        );
-
+        const result = await this.subscriptionsService.activateFreeTier(auth0Id);
         const refreshedUser = await this.userRepository.findOne({ where: { auth0Id } });
-        return this.buildUserResponseDto(refreshedUser ?? user, membership);
+        return this.buildUserResponseDto(refreshedUser ?? user, result.membership);
       }
 
       this.logger.log(`User updated successfully: ${auth0Id}`);

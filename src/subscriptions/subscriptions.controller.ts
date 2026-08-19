@@ -13,6 +13,7 @@ import { SubscriptionsService } from './subscriptions.service';
 import { Auth0Guard } from '../users/guards/auth0.guard';
 import { SubscriptionResponseDto } from './dto/subscription-response.dto';
 import { GetSubscriptionDto } from './dto/get-subscription.dto';
+import { ActivateFreeTierResponseDto } from './dto/activate-free-tier-response.dto';
 
 @ApiTags('subscriptions')
 @ApiSecurity('auth0_id')
@@ -49,6 +50,19 @@ export class SubscriptionsController {
       return subscription;
     } catch (error) {
       this.logger.error(`Error in getSubscription: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Post('free')
+  async activateFreeTier(
+    @Headers('auth0_id') auth0Id: string,
+  ): Promise<ActivateFreeTierResponseDto> {
+    try {
+      this.logger.log(`POST /user/subscription/free called with auth0_id: ${auth0Id}`);
+      return await this.subscriptionsService.activateFreeTier(auth0Id);
+    } catch (error) {
+      this.logger.error(`Error in activateFreeTier: ${error.message}`, error.stack);
       throw error;
     }
   }

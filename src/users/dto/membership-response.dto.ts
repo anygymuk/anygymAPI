@@ -15,4 +15,6 @@ export class MembershipResponseDto {
   next_billing_date: string | null;
   created_at: string | null;
   updated_at: string | null;
+  /** persisted = row in subscriptions table; inferred = legacy placeholder (deprecated) */
+  membership_source?: 'persisted' | 'inferred';
 }

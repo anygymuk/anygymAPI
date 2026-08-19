@@ -5,6 +5,7 @@ import { Subscription } from './entities/subscription.entity';
 import { SubscriptionResponseDto } from './dto/subscription-response.dto';
 import { GetSubscriptionDto } from './dto/get-subscription.dto';
 import { MembershipResponseDto } from '../users/dto/membership-response.dto';
+import { ActivateFreeTierResponseDto } from './dto/activate-free-tier-response.dto';
 import { User } from '../users/entities/user.entity';
 import Stripe from 'stripe';
 
@@ -16,6 +17,8 @@ export class SubscriptionsService {
   constructor(
     @InjectRepository(Subscription)
     private subscriptionRepository: Repository<Subscription>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
   ) {
     const stripeKey = process.env.STRIPE_SECRET_KEY;
     if (stripeKey) {
@@ -88,7 +91,45 @@ export class SubscriptionsService {
       next_billing_date: formatDate(subscription.nextBillingDate),
       created_at: formatTimestamp(subscription.startDate),
       updated_at: formatTimestamp(subscription.currentPeriodStart),
+      membership_source: 'persisted',
     };
+  }
+
+  async activateFreeTier(auth0Id: string): Promise<ActivateFreeTierResponseDto> {
+    const user = await this.userRepository.findOne({ where: { auth0Id } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    let stripeCustomerId = user.stripeCustomerId;
+    if (!stripeCustomerId) {
+      stripeCustomerId = await this.tryEnsureStripeCustomer(user);
+      if (stripeCustomerId) {
+        user.stripeCustomerId = stripeCustomerId;
+        await this.userRepository.save(user);
+      }
+    }
+
+    const before = await this.findActiveSubscription(auth0Id);
+    const hadPaidSubscription = Boolean(before?.stripeSubscriptionId);
+
+    const subscription = await this.assignFreeTier(auth0Id, stripeCustomerId);
+    const membership = this.formatMembership(subscription);
+
+    const activated =
+      !hadPaidSubscription &&
+      subscription.tier === 'free' &&
+      subscription.status === 'active';
+
+    if (activated) {
+      this.logger.log(`Free tier activated for user ${auth0Id}, subscription id=${subscription.id}`);
+    } else if (hadPaidSubscription) {
+      this.logger.log(
+        `Free tier activation skipped for user ${auth0Id}; active paid subscription present`,
+      );
+    }
+
+    return { membership, activated };
   }
 
   async findActiveSubscription(auth0Id: string): Promise<Subscription | null> {

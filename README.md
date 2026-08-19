@@ -35,6 +35,9 @@ Run the SQL files in `migrations/` against your PostgreSQL database before using
 psql "$DATABASE_URL" -f migrations/001_create_newsletter_subscriptions.sql
 psql "$DATABASE_URL" -f migrations/002_create_gym_group_enquiries.sql
 psql "$DATABASE_URL" -f migrations/003_create_investor_enquiries.sql
+psql "$DATABASE_URL" -f migrations/004_add_price_per_pass_to_gyms.sql
+psql "$DATABASE_URL" -f migrations/005_create_pass_purchases.sql
+psql "$DATABASE_URL" -f migrations/006_make_next_billing_date_nullable.sql
 ```
 
 ### Running the Application
@@ -292,6 +295,35 @@ Lead forms send two Resend emails on success:
 | `RESEND_PASS_TEMPLATE_ID` | No | Resend template ID for pass confirmation emails; defaults to `new-pass` |
 
 Stripe membership checkout (`checkout.session.completed`) sends the `new-user` welcome email to all subscribers. Single pass purchases send the `new-pass` confirmation email via pass fulfillment.
+
+### Free tier membership
+
+After onboarding, clients must activate free tier explicitly:
+
+```
+POST /user/subscription/free
+Header: auth0_id
+```
+
+**Success response:**
+```json
+{
+  "membership": {
+    "id": 42,
+    "tier": "free",
+    "status": "active",
+    "membership_source": "persisted",
+    "monthly_limit": 0,
+    "next_billing_date": null
+  },
+  "activated": true
+}
+```
+
+- `membership.id > 0` and `membership_source: "persisted"` mean the user can use free-tier pass purchase (`POST /purchase_pass_checkout`)
+- `GET /user` returns `membership: null` until free tier is activated (no inferred membership)
+- `activated: false` when the user already has an active paid Stripe subscription
+- `assign_free_tier` on `PUT /user/update` is deprecated; prefer `POST /user/subscription/free`
 
 ## Notes
 
