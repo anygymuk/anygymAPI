@@ -379,6 +379,7 @@ export class UsersService {
           'pass.subscriptionTier',
         ])
         .where('pass.userId = :auth0Id', { auth0Id })
+        .andWhere('pass.status = :status', { status: 'active' })
         .andWhere('pass.validUntil IS NOT NULL')
         .andWhere('pass.validUntil > :now', { now })
         .orderBy('pass.createdAt', 'DESC')
@@ -1036,11 +1037,12 @@ export class UsersService {
           'user.email AS member_email',
           'COUNT(pass.id) AS passes',
           'MAX(pass.createdAt) AS last_visit',
-          'MAX(CASE WHEN pass.validUntil IS NOT NULL AND pass.validUntil > :now THEN 1 ELSE 0 END) AS has_active_pass',
+          'MAX(CASE WHEN pass.status = :activeStatus AND pass.validUntil IS NOT NULL AND pass.validUntil > :now THEN 1 ELSE 0 END) AS has_active_pass',
         ])
         .groupBy('user.auth0Id')
         .addGroupBy('user.email')
-        .setParameter('now', now);
+        .setParameter('now', now)
+        .setParameter('activeStatus', 'active');
 
       // Apply role-based filtering
       if (adminUser.role === 'admin') {

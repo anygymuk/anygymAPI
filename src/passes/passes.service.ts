@@ -16,6 +16,7 @@ import {
   RecentGymDto,
   SubscriptionSummaryDto,
 } from './dto/passes-with-subscription-response.dto';
+import { partitionPasses } from './pass-partition.utils';
 import { Gym } from '../gyms/entities/gym.entity';
 import { PassPricing } from './entities/pass-pricing.entity';
 import { Subscription } from '../subscriptions/entities/subscription.entity';
@@ -359,6 +360,7 @@ export class PassesService {
       const existingActivePass = await this.gymPassRepository
         .createQueryBuilder('pass')
         .where('pass.userId = :auth0Id', { auth0Id })
+        .andWhere('pass.status = :status', { status: 'active' })
         .andWhere('pass.validUntil IS NOT NULL')
         .andWhere('pass.validUntil > :now', { now })
         .orderBy('pass.createdAt', 'DESC')
@@ -742,15 +744,7 @@ export class PassesService {
 
       const allPasses = await this.findByAuth0Id(auth0Id);
       const now = new Date();
-
-      const activePasses = allPasses.filter(pass => {
-        if (!pass.valid_until) return false;
-        return new Date(pass.valid_until) > now;
-      });
-      const passHistory = allPasses.filter(pass => {
-        if (!pass.valid_until) return true;
-        return new Date(pass.valid_until) <= now;
-      });
+      const { activePasses, passHistory } = partitionPasses(allPasses, now);
 
       const recentGyms = this.recentGymsFromActiveAndHistory(activePasses, passHistory);
 
